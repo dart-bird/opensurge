@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * object_decorators.c - Legacy scripting API: commands
- * Copyright (C) 2010-2013, 2018  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,8 +29,12 @@
 #include "../camera.h"
 #include "../player.h"
 #include "../sfx.h"
-#include "../../core/util.h"
-#include "../../core/stringutil.h"
+#include "../../util/numeric.h"
+#include "../../util/util.h"
+#include "../../util/stringutil.h"
+#include "../../util/v2d.h"
+#include "../../core/global.h"
+#include "../../core/asset.h"
 #include "../../core/audio.h"
 #include "../../core/timer.h"
 #include "../../core/web.h"
@@ -38,7 +42,6 @@
 #include "../../core/image.h"
 #include "../../core/font.h"
 #include "../../core/input.h"
-#include "../../core/v2d.h"
 #include "../../scenes/level.h"
 #include "../../physics/obstacle.h"
 
@@ -670,7 +673,19 @@ audiostrategy_t* playsamplestrategy_new(const char *sample_name, expression_t *v
     ((audiostrategy_t*)s)->update = playsamplestrategy_update;
     ((audiostrategy_t*)s)->release = playsamplestrategy_release;
 
-    s->sfx = sound_load(sample_name);
+    /* backwards compatibility */
+    sound_t *sfx = NULL;
+    if(!asset_exists(sample_name)) {
+        char *compat_path = mallocx((12 + strlen(sample_name) + 1) * sizeof(char));
+        sprintf(compat_path, "samples/%s.wav", sample_name);
+        if(asset_exists(compat_path))
+            sfx = sound_load(compat_path);
+        free(compat_path);
+    }
+    else
+        sfx = sound_load(sample_name);
+
+    s->sfx = sfx;
     s->vol = vol;
     s->pan = pan;
     s->freq = freq;
@@ -684,7 +699,10 @@ void playsamplestrategy_update(audiostrategy_t *s)
     playsamplestrategy_t *me = (playsamplestrategy_t*)s;
     float vol, pan, freq;
 
-    vol = clip(expression_evaluate(me->vol), 0.0f, 1.0f);
+    if(me->sfx == NULL)
+        return;
+
+    vol = clip01(expression_evaluate(me->vol));
     pan = clip(expression_evaluate(me->pan), -1.0f, 1.0f);
     freq = expression_evaluate(me->freq);
     /*loop = expression_evaluate(me->loop);*/ /* deprecated */
@@ -771,7 +789,7 @@ void setmusicvolumestrategy_update(audiostrategy_t *s)
     setmusicvolumestrategy_t *me = (setmusicvolumestrategy_t*)s;
     float vol;
 
-    vol = clip(expression_evaluate(me->vol), 0.0f, 1.0f);
+    vol = clip01(expression_evaluate(me->vol));
     music_set_volume(vol);
 }
 
@@ -789,8 +807,19 @@ audiostrategy_t* stopsamplestrategy_new(const char *sample_name)
     ((audiostrategy_t*)s)->update = stopsamplestrategy_update;
     ((audiostrategy_t*)s)->release = stopsamplestrategy_release;
 
-    s->sfx = sound_load(sample_name);
+    /* backwards compatibility */
+    sound_t *sfx = NULL;
+    if(!asset_exists(sample_name)) {
+        char *compat_path = mallocx((12 + strlen(sample_name) + 1) * sizeof(char));
+        sprintf(compat_path, "samples/%s.wav", sample_name);
+        if(asset_exists(compat_path))
+            sfx = sound_load(compat_path);
+        free(compat_path);
+    }
+    else
+        sfx = sound_load(sample_name);
 
+    s->sfx = sfx;
     return (audiostrategy_t*)s;
 }
 
@@ -1854,8 +1883,8 @@ void ellipticaltrajectory_update(objectmachine_t *obj, player_t **team, int team
 
     float amplitude_x = expression_evaluate(me->amplitude_x);
     float amplitude_y = expression_evaluate(me->amplitude_y);
-    float angularspeed_x = expression_evaluate(me->angularspeed_x) * (2.0f * PI);
-    float angularspeed_y = expression_evaluate(me->angularspeed_y) * (2.0f * PI);
+    float angularspeed_x = expression_evaluate(me->angularspeed_x) * TWO_PI;
+    float angularspeed_y = expression_evaluate(me->angularspeed_y) * TWO_PI;
     float initialphase_x = (expression_evaluate(me->initialphase_x) * PI) / 180.0f;
     float initialphase_y = (expression_evaluate(me->initialphase_y) * PI) / 180.0f;
 
@@ -3139,12 +3168,12 @@ void lockcamera_update(objectmachine_t *obj, player_t **team, int team_size, bri
             /* hey, you can't enter here! */
             float border = 30.0f;
             if(ta->position.x > rx - border && ta->position.x < rx) {
-                ta->position.x = rx - border;
-                ta->speed.x = 0.0f;
+                player_set_xpos(team[i], rx - border);
+                player_set_speed(team[i], 0.0f);
             }
             if(ta->position.x > rx + rw && ta->position.x < rx + rw + border) {
-                ta->position.x = rx + rw + border;
-                ta->speed.x = 0.0f;
+                player_set_xpos(team[i], rx + rw + border);
+                player_set_speed(team[i], 0.0f);
             }
         }
         else {
@@ -3174,14 +3203,16 @@ void lockcamera_update(objectmachine_t *obj, player_t **team, int team_size, bri
     if(me->has_locked_somebody) {
         ta = player->actor;
         if(ta->position.x < rx) {
-            ta->position.x = rx;
-            ta->speed.x = max(0.0f, ta->speed.x);
+            player_set_xpos(player, rx);
+            if(player_speed(player) < 0.0f)
+                player_set_speed(player, 0.0f);
         }
         if(ta->position.x > rx + rw) {
-            ta->position.x = rx + rw;
-            ta->speed.x = min(0.0f, ta->speed.x);
+            player_set_xpos(player, rx + rw);
+            if(player_speed(player) > 0.0f)
+                player_set_speed(player, 0.0f);
         }
-        ta->position.y = clip(ta->position.y, ry, ry + rh);
+        player_set_ypos(player, clip(ta->position.y, ry, ry + rh));
     }
 
     decorated_machine->update(decorated_machine, team, team_size, brick_list, item_list, object_list);
@@ -3569,7 +3600,9 @@ void moveplayer_update(objectmachine_t *obj, player_t **team, int team_size, bri
     v2d_t ds = v2d_multiply(speed, dt);
     player_t *player = enemy_get_observed_player(obj->get_object_instance(obj));
 
-    player->actor->position = v2d_add(player->actor->position, ds);
+    v2d_t prev_pos = player_position(player);
+    v2d_t new_pos = v2d_add(prev_pos, ds);
+    player_set_position(player, new_pos);
 
     decorated_machine->update(decorated_machine, team, team_size, brick_list, item_list, object_list);
 }
@@ -3801,7 +3834,7 @@ void observe_player(observeplayerstrategy_t *strategy, player_t **team, int team
     player_t *player = NULL;
 
     for(i=0; i<team_size; i++) {
-        if(str_icmp(team[i]->name, strategy->player_name) == 0)
+        if(str_icmp(player_name(team[i]), strategy->player_name) == 0)
             player = team[i];
     }
 
@@ -4060,9 +4093,9 @@ static int onrightwallcollision_should_trigger_event(eventstrategy_t *event, obj
 struct onbutton_t {
     eventstrategy_t base; /* implements eventstrategy_t */
     inputbutton_t button;
-    bool (*check)(input_t*,inputbutton_t);
+    bool (*check)(const input_t*,inputbutton_t);
 };
-static eventstrategy_t* onbutton_new(const char *button_name, bool (*check)(input_t*,inputbutton_t));
+static eventstrategy_t* onbutton_new(const char *button_name, bool (*check)(const input_t*,inputbutton_t));
 static void onbutton_init(eventstrategy_t *event);
 static void onbutton_release(eventstrategy_t *event);
 static int onbutton_should_trigger_event(eventstrategy_t *event, object_t *object, player_t** team, int team_size, brick_list_t *brick_list, item_list_t *item_list, object_list_t *object_list);
@@ -4355,7 +4388,7 @@ objectmachine_t* objectdecorator_onbuttonpressed_new(objectmachine_t *decorated_
 
 objectmachine_t* objectdecorator_onbuttonup_new(objectmachine_t *decorated_machine, const char *button_name, const char *new_state_name)
 {
-    return onevent_make_decorator(decorated_machine, new_state_name, onbutton_new(button_name, input_button_up));
+    return onevent_make_decorator(decorated_machine, new_state_name, onbutton_new(button_name, input_button_released));
 }
 
 objectmachine_t* objectdecorator_onmusicplay_new(objectmachine_t *decorated_machine, const char *new_state_name)
@@ -4618,7 +4651,7 @@ void onrandomevent_release(eventstrategy_t *event)
 int onrandomevent_should_trigger_event(eventstrategy_t *event, object_t *object, player_t** team, int team_size, brick_list_t *brick_list, item_list_t *item_list, object_list_t *object_list)
 {
     onrandomevent_t *x = (onrandomevent_t*)event;
-    float probability = clip(expression_evaluate(x->probability), 0.0f, 1.0f);
+    float probability = clip01(expression_evaluate(x->probability));
     return (int)(100000 * probability) > random(100000);
 }
 
@@ -4758,7 +4791,7 @@ int onplayerrectcollision_should_trigger_event(eventstrategy_t *event, object_t 
     actor_t *act = object->actor;
     player_t *player = enemy_get_observed_player(object);
     actor_t *pa = player->actor;
-    image_t *pi = actor_image(pa);
+    const image_t *pi = actor_image(pa);
     int x1 = (int)expression_evaluate(me->x1);
     int x2 = (int)expression_evaluate(me->x2);
     int y1 = (int)expression_evaluate(me->y1);
@@ -4808,7 +4841,7 @@ int onobservedplayer_should_trigger_event(eventstrategy_t *event, object_t *obje
 {
     onobservedplayer_t *x = (onobservedplayer_t*)event;
     player_t *player = enemy_get_observed_player(object);
-    return str_icmp(player->name, x->player_name) == 0;
+    return str_icmp(player_name(player), x->player_name) == 0;
 }
 
 /* onplayerevent_t strategy */
@@ -5064,7 +5097,7 @@ int onrightwallcollision_should_trigger_event(eventstrategy_t *event, object_t *
 }
 
 /* onbutton_t strategy */
-eventstrategy_t* onbutton_new(const char *button_name, bool (*check)(input_t*,inputbutton_t))
+eventstrategy_t* onbutton_new(const char *button_name, bool (*check)(const input_t*,inputbutton_t))
 {
     onbutton_t *x = mallocx(sizeof *x);
     eventstrategy_t *e = (eventstrategy_t*)x;
@@ -5452,7 +5485,7 @@ void playeraction_render(objectmachine_t *obj, v2d_t camera_position)
 /* private strategies */
 void springfy(player_t *player)
 {
-    player_spring(player);
+    player_springify(player);
 }
 
 void roll(player_t *player)
@@ -5472,12 +5505,12 @@ void disable_roll(player_t *player)
 
 void strong(player_t *player)
 {
-    player->attacking = TRUE;
+    player_set_aggressive(player, TRUE);
 }
 
 void weak(player_t *player)
 {
-    player->attacking = FALSE;
+    player_set_aggressive(player, FALSE);
 }
 
 void enterwater(player_t *player)
@@ -6231,7 +6264,7 @@ void setalpha_update(objectmachine_t *obj, player_t **team, int team_size, brick
     objectmachine_t *decorated_machine = dec->decorated_machine;
     objectdecorator_setalpha_t *me = (objectdecorator_setalpha_t*)obj;
     object_t *object = obj->get_object_instance(obj);
-    float alpha = clip(expression_evaluate(me->alpha), 0.0f, 1.0f);
+    float alpha = clip01(expression_evaluate(me->alpha));
 
     object->actor->alpha = alpha;
 
@@ -6598,7 +6631,7 @@ void change_the_animation(objectmachine_t *obj)
     object_t *object = obj->get_object_instance(obj);
     objectdecorator_setanimationstrategy_anim_t *s = (objectdecorator_setanimationstrategy_anim_t*)(me->strategy);
     int animation_id = (int)expression_evaluate(s->animation_id);
-    animation_t *anim = sprite_get_animation(s->sprite_name, animation_id);
+    const animation_t *anim = sprite_get_animation(s->sprite_name, animation_id);
 
     actor_change_animation(object->actor, anim);
 }
@@ -6975,7 +7008,8 @@ void setplayerposition_update(objectmachine_t *obj, player_t **team, int team_si
     player_t *player = enemy_get_observed_player(object);
     v2d_t offset = v2d_new(expression_evaluate(me->offset_x), expression_evaluate(me->offset_y));
 
-    player->actor->position = v2d_add(object->actor->position, offset);
+    v2d_t new_pos = v2d_add(object->actor->position, offset);
+    player_set_position(player, new_pos);
 
     decorated_machine->update(decorated_machine, team, team_size, brick_list, item_list, object_list);
 }
@@ -7095,12 +7129,14 @@ void setplayerspeed_render(objectmachine_t *obj, v2d_t camera_position)
 /* private strategies */
 void set_xspeed(player_t *player, expression_t *speed)
 {
-    player->actor->speed.x = expression_evaluate(speed);
+    float value = expression_evaluate(speed);
+    player_set_speed(player, value);
 }
 
 void set_yspeed(player_t *player, expression_t *speed)
 {
-    player->actor->speed.y = expression_evaluate(speed);
+    float value = expression_evaluate(speed);
+    player_set_ysp(player, value);
 }
 
 /* objectdecorator_setscale_t class */
@@ -7484,7 +7520,7 @@ void simulatebutton_update(objectmachine_t *obj, player_t **team, int team_size,
     object_t *object = obj->get_object_instance(obj);
     player_t *player = enemy_get_observed_player(object);
 
-    input_restore(player->actor->input); /* so that non-active players will respond to this command */
+    input_enable(player->actor->input); /* so that non-active players will respond to this command */
     me->callback(player->actor->input, me->button);
 
     decorated_machine->update(decorated_machine, team, team_size, brick_list, item_list, object_list);
@@ -7577,7 +7613,7 @@ void switchcharacter_update(objectmachine_t *obj, player_t **team, int team_size
 
     if(me->name != NULL) {
         for(i=0; i<team_size && new_player == NULL; i++) {
-            if(str_icmp(team[i]->name, me->name) == 0)
+            if(str_icmp(player_name(team[i]), me->name) == 0)
                 new_player = team[i];
         }
     }

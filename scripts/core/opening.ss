@@ -7,9 +7,19 @@
 using SurgeEngine.Transform;
 using SurgeEngine.Vector2;
 using SurgeEngine.Level;
+using SurgeEngine.Player;
 using SurgeEngine.Actor;
 using SurgeEngine.UI.Text;
 using SurgeEngine.Video.Screen;
+using SurgeEngine.Input.MobileGamepad;
+
+// -----------------------------------------------------------------------------
+// ATTENTION
+//
+// "Default Opening Animation" is considered obsolete since Open Surge 0.6.0,
+// but it has been kept for retro-compatibility. Object "Default Title Card" is
+// a suitable replacement.
+// -----------------------------------------------------------------------------
 
 object "Default Opening Animation" is "entity", "awake", "detached", "private"
 {
@@ -21,17 +31,20 @@ object "Default Opening Animation" is "entity", "awake", "detached", "private"
     act = spawn("DefaultOpeningAnimation.Act");
     title = spawn("DefaultOpeningAnimation.Title");
     game = spawn("DefaultOpeningAnimation.Game");
-    lighting = spawn("DefaultOpeningAnimation.Lighting");
+    lightning = spawn("DefaultOpeningAnimation.Lightning");
     formulas = [
         spawn("DefaultOpeningAnimation.Formula").atColumn(0),
         spawn("DefaultOpeningAnimation.Formula").atColumn(1),
         spawn("DefaultOpeningAnimation.Formula").atColumn(2)
     ];
+    blocker = spawn("DefaultOpeningAnimation.Blocker");
 
     state "main"
     {
         leftArrow.appear();
         rightArrow.appear();
+        MobileGamepad.fadeOut();
+
         state = "appearing arrows";
     }
 
@@ -50,7 +63,7 @@ object "Default Opening Animation" is "entity", "awake", "detached", "private"
             game.appear();
             title.appear();
             act.appear();
-            lighting.appear();
+            lightning.appear();
             foreach(formula in formulas)
                 formula.appear();
             state = "displaying info";
@@ -65,7 +78,7 @@ object "Default Opening Animation" is "entity", "awake", "detached", "private"
             rightHalf.disappear();
             foreach(formula in formulas)
                 formula.disappear();
-            lighting.disappear();
+            lightning.disappear();
             act.disappear();
             title.disappear();
             game.disappear();
@@ -75,6 +88,7 @@ object "Default Opening Animation" is "entity", "awake", "detached", "private"
 
     state "done"
     {
+        MobileGamepad.fadeIn();
         if(timeout(1.0))
             destroy();
     }
@@ -394,10 +408,10 @@ object "DefaultOpeningAnimation.Game" is "entity", "awake", "detached", "private
     }
 }
 
-object "DefaultOpeningAnimation.Lighting" is "entity", "awake", "detached", "private"
+object "DefaultOpeningAnimation.Lightning" is "entity", "awake", "detached", "private"
 {
     transform = Transform();
-    actor = Actor("DefaultOpeningAnimation.Lighting");
+    actor = Actor("DefaultOpeningAnimation.Lightning");
 
     state "main"
     {
@@ -418,5 +432,27 @@ object "DefaultOpeningAnimation.Lighting" is "entity", "awake", "detached", "pri
     fun disappear()
     {
         destroy();
+    }
+}
+
+object "DefaultOpeningAnimation.Blocker"
+{
+    player = Player.active;
+
+    state "main"
+    {
+        Level.time = 0.0;
+        if(timeout(3.0))
+            destroy();
+    }
+
+    fun constructor()
+    {
+        player.input.enabled = false;
+    }
+
+    fun destructor()
+    {
+        player.input.enabled = true;
     }
 }

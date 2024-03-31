@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * color.h - color utility
- * Copyright (C) 2019  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,22 +25,19 @@
 #include <stdint.h>
 
 /* color type */
-#if defined(A5BUILD)
 #include <allegro5/allegro.h>
 
 typedef struct color_t {
     ALLEGRO_COLOR _color;
 } color_t;
-#else
-typedef struct color_t {
-    int _value;
-} color_t;
-#endif
 
 /* public API */
 color_t color_rgb(uint8_t r, uint8_t g, uint8_t b);
 color_t color_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+color_t color_premul_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+color_t color_mix(color_t x, color_t y, float t);
 color_t color_hex(const char* hex_string);
+const char* color_to_hex(color_t color, char* dest, size_t dest_size);
 void color_unmap(color_t color, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 bool color_equals(color_t a, color_t b);
 bool color_is_transparent(color_t color);

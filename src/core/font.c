@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * font.c - font module
- * Copyright (C) 2008-2011, 2013, 2018-2019  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,14 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if defined(A5BUILD)
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_font.h>
 #include <allegro5/allegro_ttf.h>
-#else
-#include <allegro.h>
-#include <alfont.h>
-#endif
 
 #include <stdio.h>
 #include <stdint.h>
@@ -33,32 +28,37 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include "font.h"
+#include "global.h"
 #include "video.h"
 #include "image.h"
 #include "color.h"
-#include "stringutil.h"
-#include "assetfs.h"
+#include "asset.h"
 #include "lang.h"
 #include "logfile.h"
-#include "hashtable.h"
-#include "nanoparser/nanoparser.h"
-#include "utf8/utf8.h"
+#include "nanoparser.h"
+#include "input.h"
+#include "../util/stringutil.h"
+#include "../util/hashtable.h"
+#include "../util/darray.h"
+#include "../util/point2d.h"
+#include "../util/rect.h"
+#include "../entities/player.h"
+#include "../entities/mobilegamepad.h"
+#include "../scenes/level.h"
+#include "../third_party/utf8.h"
 
 /* private stuff */
-#if defined(A5BUILD)
-#define IMAGE2BITMAP(img)           (*((ALLEGRO_BITMAP**)(img)))
-#else
-#define IMAGE2BITMAP(img)           (*((BITMAP**)(img)))
-#endif
 #define FONT_STACKCAPACITY          8        /* color stack capacity */
-#define FONT_TEXTMAXSIZE            16384    /* maximum size for texts */
+#define FONT_TEXTMAXSIZE            65536    /* maximum size for texts */
 #define FONT_PATHMAX                1024     /* buffer size for multilingual paths */
-static bool allow_antialias = true;          /* allow antialiasing for all TTF fonts? */
+#define FONT_BLANKSMAXSIZE          8192     /* max buffer size for find_blanks() */
+#define FONT_COLORBREAKPOINT     ((char)0x2) /* a control character that delimits a change of color */
+#define FONT_MAXBITMAPGLYPHS        0x500    /* maximum number of bitmap glyphs (we currently support up to codepoint U+04FF) */
 
 /* macros */
-#define IS_VAR_ANYCHAR(c)           ((c) != '\0' && ((isalnum((unsigned char)(c))) || ((c) == '_')))
-#define IS_VAR_1STCHAR(c)           ((c) != '\0' && ((isalpha((unsigned char)(c))) || ((c) == '_')))
-#define IS_TAG_1STCHAR(c)           ((c) != '\0' && ((isalpha((unsigned char)(c))) || ((c) == '/')))
+#define IS_VAR_ANYCHAR(c)           ((isalnum((unsigned char)(c))) || ((c) == '_'))
+#define IS_VAR_1STCHAR(c)           ((isalpha((unsigned char)(c))) || ((c) == '_'))
+#define IS_TAG_1STCHAR(c)           ((isalpha((unsigned char)(c))) || ((c) == '/'))
 
 /* ------------------------------- */
 
@@ -66,27 +66,26 @@ static bool allow_antialias = true;          /* allow antialiasing for all TTF f
 typedef const char* (*fontcallback_t)();
 static void callbacktable_init();
 static void callbacktable_release();
-static void callbacktable_add(const char *variable_name, fontcallback_t callback);
-static fontcallback_t callbacktable_find(const char *variable_name);
+static void callbacktable_add(const char* variable_name, fontcallback_t callback);
+static fontcallback_t callbacktable_find(const char* variable_name);
 HASHTABLE_GENERATE_CODE(fontcallback_t, NULL);
 static HASHTABLE(fontcallback_t, callback_table);
 
 /* ------------------------------- */
 
 /* font scripts (nanoparser) */
-static int traverse(const parsetree_statement_t *stmt);
-static int traverse_block(const parsetree_statement_t *stmt, void *data);
-static int traverse_bmp(const parsetree_statement_t *stmt, void *data);
-static int traverse_bmp_char(const parsetree_statement_t *stmt, void *data);
-static int traverse_ttf(const parsetree_statement_t *stmt, void *data);
-static int dirfill(const char *vpath, void *param);
+static int traverse(const parsetree_statement_t* stmt);
+static int traverse_block(const parsetree_statement_t* stmt, void* data);
+static int traverse_bmp(const parsetree_statement_t* stmt, void* data);
+static int traverse_bmp_char(const parsetree_statement_t* stmt, void* data);
+static int traverse_ttf(const parsetree_statement_t* stmt, void* data);
+static int dirfill(const char* vpath, void* param);
 
 typedef struct charproperties_t charproperties_t;
 struct charproperties_t {
-    bool valid; /* whether this character is valid (exists) */
-    struct { /* spritesheet info */
-        int x, y, width, height;
-    } source_rect;
+    bool valid; /* whether or not this character is defined */
+    struct { int x, y, width, height; } source_rect; /* spritesheet info */
+    point2d_t offset; /* offset of this character (defaults to zero) */
     int index; /* index is such that keymap[index] == this_character (if this_character is not in keymap, index is -1) */
 };
 
@@ -99,7 +98,7 @@ struct fontscript_t {
             char source_file[FONT_PATHMAX]; /* source file (relative file path) */
             int source_rect[4]; /* spritesheet rect: x, y, width, height */
             int spacing[2]; /* character spacing: x, y */
-            charproperties_t chr[256]; /* properties of char x (0..255) */
+            charproperties_t chr[FONT_MAXBITMAPGLYPHS]; /* properties of each glyph */
         } bmp;
 
         /* true-type */
@@ -117,144 +116,162 @@ struct fontscript_t {
 /* fontdrv_t: a font driver stores the attributes the font class (bmp, ttf) */
 typedef struct fontdrv_t fontdrv_t;
 struct fontdrv_t { /* abstract font: base class */
-    void (*textout)(const fontdrv_t*,const char*,int,int,color_t); /* prints a string */
-    v2d_t (*textsize)(const fontdrv_t*,const char*); /* text size, in pixels */
-    v2d_t (*charspacing)(const fontdrv_t*); /* a pair (hspace, vspace) */
+    void (*textout)(const fontdrv_t*,const char*,int,int,color_t); /* prints an unformatted line of text */
+    int (*line_width)(const fontdrv_t*,const char*); /* width in pixels of an unformatted line of text */
+    int (*line_height)(const fontdrv_t*); /* height in pixels of any line of text */
+    const char* (*filepath)(const fontdrv_t*); /* relative path of the font */
+    const image_t* (*image)(const fontdrv_t*); /* image atlas (if any) */
     void (*release)(fontdrv_t*); /* release the fontdrv_t */
 };
-static fontdrv_t* fontdrv_bmp_new(const char *source_file, charproperties_t chr[], int spacing[2]);
-static fontdrv_t* fontdrv_ttf_new(const char *source_file, int size, bool antialias, bool shadow);
+static fontdrv_t* fontdrv_bmp_new(const char* source_file, charproperties_t chr[], int spacing[2]);
+static fontdrv_t* fontdrv_ttf_new(const char* source_file, int size, bool antialias, bool shadow);
 
 typedef struct fontdrv_bmp_t fontdrv_bmp_t;
 struct fontdrv_bmp_t { /* bitmap font */
     fontdrv_t base;
-    image_t *bmp[256]; /* bitmap character indexed by its unicode number */
+    const image_t* atlas; /* image atlas */
+    image_t* glyph[FONT_MAXBITMAPGLYPHS]; /* glyph indexed by codepoint */
+    point2d_t glyph_offset[FONT_MAXBITMAPGLYPHS]; /* offset of a glyph (defaults to zero) */
     v2d_t spacing; /* character spacing */
-    int line_height; /* max({ image_height(bmp[j]) | j >= 0 }) */
+    int line_height; /* max({ image_height(glyph[j]) | j >= 0 }) */
+    char* filepath; /* relative path */
 };
-static void fontdrv_bmp_textout(const fontdrv_t *fnt, const char* text, int x, int y, color_t color);
-static v2d_t fontdrv_bmp_textsize(const fontdrv_t *fnt, const char *string);
-static v2d_t fontdrv_bmp_charspacing(const fontdrv_t *fnt);
-static void fontdrv_bmp_release(fontdrv_t *fnt);
+static void fontdrv_bmp_textout(const fontdrv_t* fnt, const char* text, int x, int y, color_t color);
+static int fontdrv_bmp_linewidth(const fontdrv_t* fnt, const char* text);
+static int fontdrv_bmp_lineheight(const fontdrv_t* fnt);
+static const char* fontdrv_bmp_filepath(const fontdrv_t* fnt);
+static const image_t* fontdrv_bmp_image(const fontdrv_t* fnt);
+static void fontdrv_bmp_release(fontdrv_t* fnt);
+static inline const image_t* find_bmp_glyph(const fontdrv_bmp_t* f, uint32_t codepoint, point2d_t* out_offset);
 
 typedef struct fontdrv_ttf_t fontdrv_ttf_t;
 struct fontdrv_ttf_t { /* truetype font */
     fontdrv_t base;
-#if defined(A5BUILD)
-    ALLEGRO_FONT *font;
-#else
-    ALFONT_FONT *ttf;
-#endif
+    ALLEGRO_FONT* font; /* TrueType font */
     int size; /* font size */
     bool antialias; /* enable antialiasing? */
     bool shadow; /* enable shadow? */
+    int line_height; /* line height */
+    char* filepath; /* relative path */
 };
-static void fontdrv_ttf_textout(const fontdrv_t *fnt, const char* text, int x, int y, color_t color);
-static v2d_t fontdrv_ttf_textsize(const fontdrv_t *fnt, const char *string);
-static v2d_t fontdrv_ttf_charspacing(const fontdrv_t *fnt);
-static void fontdrv_ttf_release(fontdrv_t *fnt);
+static void fontdrv_ttf_textout(const fontdrv_t* fnt, const char* text, int x, int y, color_t color);
+static int fontdrv_ttf_linewidth(const fontdrv_t* fnt, const char* text);
+static int fontdrv_ttf_lineheight(const fontdrv_t* fnt);
+static const char* fontdrv_ttf_filepath(const fontdrv_t* fnt);
+static const image_t* fontdrv_ttf_image(const fontdrv_t* fnt);
+static void fontdrv_ttf_release(fontdrv_t* fnt);
 
 /* ------------------------------- */
 
 /* list of fontdrv_t */
 typedef struct fontdrv_list_t fontdrv_list_t;
 struct fontdrv_list_t {
-    char *name;
-    fontdrv_t *data;
-    fontdrv_list_t *next;
+    char* name;
+    fontdrv_t* data;
+    fontdrv_list_t* next;
 };
 
 static fontdrv_list_t* fontdrv_list = NULL;
 static void fontdrv_list_init();
 static void fontdrv_list_release();
-static void fontdrv_list_add(const char *name, fontdrv_t *drv);
-static fontdrv_t* fontdrv_list_find(const char *name);
-static fontdrv_t* fontdrv_list_find_ex(const char *name, const char *lang_id);
+static void fontdrv_list_add(const char* name, fontdrv_t* drv);
+static fontdrv_t* fontdrv_list_find(const char* name);
+static fontdrv_t* fontdrv_list_find_ex(const char* name, const char* lang_id);
 
 /* ------------------------------- */
 
 /* font arguments: for a safe printf-like alternative (when dealing with user-provided format strings) */
-#define FONTARGS_MAX 3 /* can go up to 9 in the current expand algorithm */
+#define FONTARGS_MAX 8 /* can go up to 9 in the current expand algorithm */
 typedef char* fontargs_t[FONTARGS_MAX];
+
+/* ------------------------------- */
+
+/* preprocessed font text */
+typedef struct fonttext_t fonttext_t;
+struct fonttext_t
+{
+    /* the text is split into single-line, single-color segments */
+    DARRAY(const char*, text_segment); /* preprocessed text segment */
+    DARRAY(color_t, color); /* color of each segment */
+    DARRAY(point2d_t, offset); /* (x,y) offset to be applied before each segment is rendered */
+    DARRAY(v2d_t, size); /* the size in pixels of each segment */
+
+    /* helpers */
+    DARRAY(color_t, color_sequence); /* auxiliary array */
+    DARRAY(int, line_width); /* the width in pixels of each line */
+    DARRAY(char, buffer); /* string buffer */
+
+    /* misc */
+    bool is_dirty; /* do we need to preprocess the text? */
+    v2d_t total_size; /* total size of the text, in pixels */
+};
+
+static void preprocess_expand(char* dest, char* tmp, size_t dest_size, fontargs_t args);
+static char* preprocess_substring(char* text, int index_of_first_char, int max_length);
+static void preprocess_colors(fonttext_t* out, const char* text);
+static void preprocess_wordwrap(fonttext_t* out, const fontdrv_t* drv, int max_width);
+static void preprocess_split(fonttext_t* out, const fontdrv_t* drv, fontalign_t align);
+static void preprocess_text(fonttext_t* out, const fontdrv_t* drv, const char* text, int max_width, fontalign_t align, fontargs_t argument, int index_of_first_char, int max_length);
+static void preprocess(font_t* f);
+
+/* ------------------------------- */
 
 /* font struct: this struct is used by the external world */
 struct font_t {
-    fontdrv_t *drv; /* font driver */
-    char *text; /* text data */
+    fontdrv_t* drv; /* font driver */
+    char* text; /* unprocessed text */
     v2d_t position; /* position */
-    int width; /* width (in pixels) for wordwrap */
+    int max_width; /* width (in pixels) for wordwrap */
     bool visible; /* is this font visible? */
-    int index_of_first_char, length; /* substring (deprecated) */
-    fontargs_t argument; /* text arguments: $1, $2 ... $<FONTARGS_MAX> */
+    int index_of_first_char, max_length; /* substring (deprecated) */
+    fontargs_t argument; /* text arguments: $1, $2 ... ${FONTARGS_MAX} */
     fontalign_t align; /* alignment */
-    char *lang_id; /* current language ID (multilingual support) */
-    char *name; /* font name (not language specific) */
+    fonttext_t preprocessed_text; /* preprocessed text */
+    char* lang_id; /* current language ID (multilingual support) */
+    char* name; /* font name (not language specific) */
 };
 
 /* misc */
-static const char* get_variable(const char *key);
-static inline bool has_variables_to_expand(const char *str, int *passes);
-static void expand_variables(char *str, fontargs_t args, size_t size);
-static void convert_to_ascii(char *str);
-static int print_line(const fontdrv_t *drv, const char* text, int x, int y, color_t color_stack[], int* stack_top);
-static int print_aligned_line(const fontdrv_t *drv, const char* text, fontalign_t align, int x, int y, color_t color_stack[], int* stack_top);
+static void register_predefined_vars();
+static const char* read_variable(const char* key, void* data);
+static int expand_vars(char* dest, const char* src, size_t dest_size, const char* (*callback)(const char*,void*), void* data);
+static inline bool has_vars_to_expand(const char* str);
+static char* convert_to_ascii(char* str);
 static char* find_wordwrap(const fontdrv_t* drv, char* text, int max_width);
-static int find_blanks(int blank[], size_t size, const char* text);
-static char* tagged_text_offset(char* txt, int charnum);
+static int find_blanks(const char* text, int blank[], size_t size);
+static char* tagged_text_offset(char* text, int charnum);
 static char* join_names(const char* name, const char* lang_id);
 static bool must_refresh_driver(const font_t* fnt);
 static void refresh_driver(font_t* fnt);
+static inline bool has_loaded_ttf(const fontdrv_ttf_t* f);
+static void load_ttf(fontdrv_ttf_t* f);
+static void unload_ttf(fontdrv_ttf_t* f);
 
 /*
  * font_init()
  * Initializes the font module
  */
-void font_init(bool allow_font_smoothing)
+void font_init()
 {
-#if defined(A5BUILD)
-    parsetree_program_t *fonts = NULL;
-
     /* initializing Allegro's TTF addon */
-    if(!al_init_ttf_addon())
-        fatal_error("Can't initialize Allegro's TTF addon");
+    if(!al_is_ttf_addon_initialized()) {
+        if(!al_init_ttf_addon())
+            fatal_error("Can't initialize Allegro's TTF addon");
+    }
 
     /* basic initialization */
-    allow_antialias = allow_font_smoothing;
     fontdrv_list_init();
 
-    /* reading the parse tree */
+    /* reading the font scripts */
     logfile_message("Loading fonts...");
-    assetfs_foreach_file("fonts", ".fnt", dirfill, &fonts, true);
-    nanoparser_traverse_program(fonts, traverse);
+    asset_foreach_file("fonts", ".fnt", dirfill, NULL, true);
     logfile_message("All fonts have been loaded.");
 
     /* initializing the font callback table */
     callbacktable_init();
 
-    /* done */
-    fonts = nanoparser_deconstruct_tree(fonts);
-#else
-    parsetree_program_t *fonts = NULL;
-
-    allow_antialias = allow_font_smoothing; /* this comes first */
-    logfile_message("Initializing alfont...");
-    if(0 != alfont_init())
-        fatal_error("alfont_init() has failed. %s", allegro_error);
-
-    logfile_message("Loading font scripts...");
-    fontdrv_list_init();
-
-    /* reading the parse tree */
-    assetfs_foreach_file("fonts", ".fnt", dirfill, &fonts, true);
-    nanoparser_traverse_program(fonts, traverse);
-    logfile_message("All fonts have been loaded.");
-
-    /* initializing the font callback table */
-    callbacktable_init();
-
-    /* done */
-    fonts = nanoparser_deconstruct_tree(fonts);
-#endif
+    /* register predefined vars */
+    register_predefined_vars();
 }
 
 
@@ -269,24 +286,33 @@ void font_release()
 
     logfile_message("Unloading font scripts...");
     fontdrv_list_release();
-
-#if !defined(A5BUILD)
-    logfile_message("Unloading alfont...");
-    alfont_exit();
-#endif
 }
 
 
 /*
  * font_register_variable()
- * Variable/text interpolation. Example: font_add_variable("$LEVEL_NAME", level_name) 
- * will replace every occurrence of $LEVEL_NAME in the text of any fonts by the
- * result of level_name()
+ * Variable/text interpolation.
+ *
+ * Example: font_register_variable("LEVEL_NAME", level_name)
+ * will replace every occurrence of $LEVEL_NAME when
+ * rendering any font by the result of level_name()
+ *
  * Call this AFTER font_init()
  */
-void font_register_variable(const char *variable_name, const char* (*callback)())
+void font_register_variable(const char* variable_name, const char* (*callback)())
 {
-    callbacktable_add(variable_name, (fontcallback_t)callback);
+    if(callback_table != NULL)
+        callbacktable_add(variable_name, (fontcallback_t)callback);
+}
+
+
+/*
+ * font_exists()
+ * Checks if a font script (.fnt) of the given name exists
+ */
+bool font_exists(const char* font_name)
+{
+    return fontdrv_list_find(font_name) != NULL;
 }
 
 
@@ -294,17 +320,17 @@ void font_register_variable(const char *variable_name, const char* (*callback)()
  * font_create()
  * Creates a new font object
  */
-font_t *font_create(const char *font_name)
+font_t* font_create(const char* font_name)
 {
     int i;
-    font_t *f = mallocx(sizeof *f);
+    font_t* f = mallocx(sizeof *f);
 
     f->text = str_dup("");
-    f->width = 0;
+    f->max_width = 0;
     f->visible = true;
     f->position = v2d_new(0, 0);
-    f->index_of_first_char = 0;
-    f->length = FONT_TEXTMAXSIZE - 1;
+    f->index_of_first_char = -1;
+    f->max_length = -1;
     f->align = FONTALIGN_LEFT;
     f->name = str_dup(font_name);
     f->lang_id = str_dup(lang_getid());
@@ -316,6 +342,16 @@ font_t *font_create(const char *font_name)
     for(i=0; i<FONTARGS_MAX; i++)
         f->argument[i] = NULL;
 
+    darray_init_ex(f->preprocessed_text.text_segment, 16);
+    darray_init_ex(f->preprocessed_text.color, 16);
+    darray_init_ex(f->preprocessed_text.offset, 16);
+    darray_init_ex(f->preprocessed_text.size, 16);
+    darray_init_ex(f->preprocessed_text.color_sequence, 16);
+    darray_init_ex(f->preprocessed_text.line_width, 4);
+    darray_init_ex(f->preprocessed_text.buffer, 64);
+    f->preprocessed_text.is_dirty = true;
+    f->preprocessed_text.total_size = v2d_new(0, 0);
+
     return f;
 }
 
@@ -326,12 +362,18 @@ font_t *font_create(const char *font_name)
  * font_destroy()
  * Destroys an existing font object
  */
-void font_destroy(font_t *f)
+void font_destroy(font_t* f)
 {
-    int i;
+    darray_release(f->preprocessed_text.buffer);
+    darray_release(f->preprocessed_text.line_width);
+    darray_release(f->preprocessed_text.color_sequence);
+    darray_release(f->preprocessed_text.size);
+    darray_release(f->preprocessed_text.offset);
+    darray_release(f->preprocessed_text.color);
+    darray_release(f->preprocessed_text.text_segment);
 
-    for(i=0; i<FONTARGS_MAX; i++) {
-        if(f->argument[i])
+    for(int i = 0; i < FONTARGS_MAX; i++) {
+        if(f->argument[i] != NULL)
             free(f->argument[i]);
     }
 
@@ -348,35 +390,29 @@ void font_destroy(font_t *f)
  * font_set_text()
  * Sets the text... printf style. Be careful with unsanitized format strings.
  */
-void font_set_text(font_t *f, const char *fmt, ...)
+void font_set_text(font_t* f, const char* fmt, ...)
 {
     static char buf[FONT_TEXTMAXSIZE];
     va_list args;
-    int passes = 0;
 
-    /* printf */
+    /* printf BEFORE expanding any $VARIABLES */
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
-    /* expand variables (AFTER printf) */
-    while(has_variables_to_expand(buf, &passes))
-        expand_variables(buf, f->argument, sizeof(buf));
-
-    /* utf8 check */
-    if(!u8_isvalid(buf, strlen(buf)))
-        convert_to_ascii(buf);
-
-    /* allocate text */
+    /* update text */
     if(f->text != NULL) {
-        /* skip if the text is the same */
-        if(strcmp(buf, f->text) != 0) {
-            free(f->text);
-            f->text = str_dup(buf);
-        }
+        /* no change? */
+        if(0 == strcmp(f->text, buf))
+            return;
+
+        /* release old text */
+        free(f->text);
     }
-    else
-        f->text = str_dup(buf);
+    f->text = str_dup(buf);
+
+    /* preprocess text */
+    f->preprocessed_text.is_dirty = true;
 }
 
 
@@ -384,20 +420,45 @@ void font_set_text(font_t *f, const char *fmt, ...)
  * font_set_textarguments()
  * Kinda like a safe, sanitazed printf-format stuff.
  * pass <amount> of const char*'s; they'll be stored
- * in $1, $2, ... up to $<FONTARGS_MAX>
+ * in $1, $2, ... up to ${FONTARGS_MAX}
  */
-void font_set_textarguments(font_t *f, int amount, ...)
+void font_set_textarguments(font_t* f, int amount, ...)
 {
-    va_list ap;
     int i, m = min(FONTARGS_MAX, amount);
-    
+    va_list ap;
+
+    /* update arguments */
     va_start(ap, amount);
-    for(i=0; i<m; i++) {
-        if(f->argument[i])
+    for(i = 0; i < m; i++) {
+        if(f->argument[i] != NULL)
             free(f->argument[i]);
         f->argument[i] = str_dup(va_arg(ap, const char*));
     }
     va_end(ap);
+
+    /* preprocess text */
+    f->preprocessed_text.is_dirty = true;
+}
+
+
+/*
+ * font_set_textargumentsv()
+ * An alternative to font_set_textarguments().
+ * Pass an array of strings instead of a variadic argument
+ */
+void font_set_textargumentsv(font_t* f, int argc, const char** argv)
+{
+    int m = min(FONTARGS_MAX, argc);
+
+    /* update arguments */
+    for(int i = 0; i < m; i++) {
+        if(f->argument[i] != NULL)
+            free(f->argument[i]);
+        f->argument[i] = str_dup(argv[i]);
+    }
+
+    /* preprocess text */
+    f->preprocessed_text.is_dirty = true;
 }
 
 
@@ -406,9 +467,9 @@ void font_set_textarguments(font_t *f, int amount, ...)
  * font_get_text()
  * Returns the text
  */
-const char *font_get_text(const font_t *f)
+const char* font_get_text(const font_t* f)
 {
-    return f->text ? f->text : "";
+    return f->text != NULL ? f->text : "";
 }
 
 
@@ -419,9 +480,20 @@ const char *font_get_text(const font_t *f)
  * you want wordwrap). If w == 0, then
  * there's no wordwrap.
  */
-void font_set_width(font_t *f, int w)
+void font_set_width(font_t* f, int w)
 {
-    f->width = max(0, w);
+    bool is_dirty = false;
+
+    /* validate */
+    w = max(0, w);
+    is_dirty = (f->max_width != w);
+
+    /* update width */
+    f->max_width = w;
+
+    /* preprocess text */
+    if(!f->preprocessed_text.is_dirty)
+        f->preprocessed_text.is_dirty = is_dirty;
 }
 
 
@@ -429,14 +501,8 @@ void font_set_width(font_t *f, int w)
  * font_render()
  * Renders the text
  */
-void font_render(font_t *f, v2d_t camera_position)
+void font_render(font_t* f, v2d_t camera_position)
 {
-    color_t stack[FONT_STACKCAPACITY] = { color_rgb(255, 255, 255) }; /* color stack */
-    int stack_top = 0, offset = -1;
-    char *p, *q, *s, *w, r = 0, t = 0;
-    char *text = f->text;
-    v2d_t pos;
-
     /* not visible? */
     if(!f->visible)
         return;
@@ -445,61 +511,73 @@ void font_render(font_t *f, v2d_t camera_position)
     if(must_refresh_driver(f))
         refresh_driver(f);
 
-    /* compute screen position */
-    pos = v2d_subtract(f->position, v2d_subtract(camera_position,
-        v2d_multiply(video_get_screen_size(), 0.5f)
-    ));
+    /* need to preprocess the text? */
+    if(f->preprocessed_text.is_dirty)
+        preprocess(f);
 
-    /* use substring? */
-    if(f->index_of_first_char > 0) {
-        text = tagged_text_offset(text, f->index_of_first_char);
-        if(text == NULL)
-            return;
-    }
-    if(f->length < FONT_TEXTMAXSIZE - 1) {
-        char* x = tagged_text_offset(text, f->length);
-        if(x != NULL) {
-            offset = x - text;
-            t = text[offset];
-            text[offset] = 0;
+    /* compute the position of the text in screen space */
+    v2d_t half_screen_size = v2d_multiply(video_get_screen_size(), 0.5f);
+    v2d_t topleft = v2d_subtract(camera_position, half_screen_size);
+    v2d_t position = v2d_subtract(f->position, topleft);
+
+    /* render the text */
+    image_hold_drawing(true);
+    do {
+        /* boundaries of the drawing target */
+        const image_t* target = image_drawing_target();
+        int target_width = image_width(target);
+        int target_height = image_height(target);
+        rect_t target_rect = rect_new(0, 0, target_width, target_height);
+
+        /* clip out the entire text if possible */
+        point2d_t initial_position = point2d_new(floorf(position.x + 0.5f), floorf(position.y + 0.5f));
+        v2d_t total_size = f->preprocessed_text.total_size;
+        rect_t bounding_box = rect_new(initial_position.x, initial_position.y, total_size.x, total_size.y);
+        if(!rect_overlaps(target_rect, bounding_box))
+            break;
+
+        /* for each preprocessed text segment */
+        for(int i = 0; i < darray_length(f->preprocessed_text.text_segment); i++) {
+            const char* text_segment = f->preprocessed_text.text_segment[i];
+            color_t color = f->preprocessed_text.color[i];
+            point2d_t offset = f->preprocessed_text.offset[i];
+            v2d_t size = f->preprocessed_text.size[i];
+
+            /* skip empty segments, as in "</color>[__empty__]\n" */
+            if(*text_segment == '\0')
+                continue;
+
+            /* find the position of the segment in screen space */
+            point2d_t segment_position = point2d_add(initial_position, offset);
+            rect_t segment_rect = rect_new(segment_position.x, segment_position.y, size.x, size.y);
+
+            /* clip out the segment if possible */
+            if(segment_rect.y >= target_rect.height) /* exit early */
+                break;
+            if(!rect_overlaps(target_rect, segment_rect))
+                continue;
+
+            /* render the segment */
+            f->drv->textout(f->drv, text_segment, segment_position.x, segment_position.y, color);
         }
-    }
-
-    /* for each line p of text (split using '\n') */
-    for(p = q = text; q != NULL; ) {
-        if((q = strchr(p, '\n')) != NULL) { *q = 0; }
-        for(s = w = p; w != NULL; ) {
-            /* for each line s of text (split using wordwrap rules) */
-            if((w = find_wordwrap(f->drv, s, f->width)) != NULL) { r = *w; *w = 0; }
-            pos.y += print_aligned_line(f->drv, s, f->align, pos.x, pos.y, stack, &stack_top);
-            if(w != NULL) { *w = r; s = w; }
-        }
-        if(q != NULL) { *q = '\n'; p = q+1; }
-    }
-
-    /* undo substring */
-    if(offset >= 0)
-        text[offset] = t;
+    } while(0);
+    image_hold_drawing(false);
 }
-
 
 
 /*
  * font_get_textsize()
- * Returns the size (in pixels) of a given text
+ * Returns the size (in pixels) of the rendered text
+ * (considering wordwrap)
  */
-v2d_t font_get_textsize(const font_t *f)
+v2d_t font_get_textsize(const font_t* f)
 {
-    return f->drv->textsize(f->drv, f->text);
-}
+    /* preprocess the text */
+    if(f->preprocessed_text.is_dirty)
+        preprocess((font_t*)f);
 
-/*
- * font_get_charspacing()
- * Returns the spacing between the characters of a given font
- */
-v2d_t font_get_charspacing(const font_t *f)
-{
-    return f->drv->charspacing(f->drv);
+    /* return the total size */
+    return f->preprocessed_text.total_size;
 }
 
 
@@ -507,7 +585,7 @@ v2d_t font_get_charspacing(const font_t *f)
  * font_set_position()
  * Sets the position of the font
  */
-void font_set_position(font_t *f, v2d_t position)
+void font_set_position(font_t* f, v2d_t position)
 {
     f->position = position;
 }
@@ -517,7 +595,7 @@ void font_set_position(font_t *f, v2d_t position)
  * font_get_position()
  * Gets the position of the font
  */
-v2d_t font_get_position(const font_t *f)
+v2d_t font_get_position(const font_t* f)
 {
     return f->position;
 }
@@ -527,7 +605,7 @@ v2d_t font_get_position(const font_t *f)
  * font_is_visible()
  * Is the font visible?
  */
-bool font_is_visible(const font_t *f)
+bool font_is_visible(const font_t* f)
 {
     return f->visible;
 }
@@ -537,7 +615,7 @@ bool font_is_visible(const font_t *f)
  * font_set_visible()
  * Sets the visibility of the font
  */
-void font_set_visible(font_t *f, bool is_visible)
+void font_set_visible(font_t* f, bool is_visible)
 {
     f->visible = is_visible;
 }
@@ -548,10 +626,28 @@ void font_set_visible(font_t *f, bool is_visible)
  * Since fonts may have color tags, variables, etc. , use this
  * to display a substring of the font (not the whole text)
  */
-void font_use_substring(font_t *f, int index_of_first_char, int length)
+void font_use_substring(font_t* f, int index_of_first_char, int max_length)
 {
-    f->index_of_first_char = max(0, index_of_first_char);
-    f->length = max(0, length);
+    /*
+     *
+     * THIS FUNCTION IS OBSOLETE
+     * TODO: remove?
+     *
+     */
+    bool is_dirty = false;
+
+    /* validate */
+    index_of_first_char = max(-1, index_of_first_char);
+    max_length = max(-1, max_length);
+    is_dirty = (f->index_of_first_char != index_of_first_char) || (f->max_length != max_length);
+
+    /* update substring */
+    f->index_of_first_char = index_of_first_char;
+    f->max_length = max_length;
+
+    /* preprocess text */
+    if(!f->preprocessed_text.is_dirty)
+        f->preprocessed_text.is_dirty = is_dirty;
 }
 
 
@@ -570,7 +666,14 @@ fontalign_t font_get_align(const font_t* f)
  */
 void font_set_align(font_t* f, fontalign_t align)
 {
+    bool is_dirty = (f->align != align);
+
+    /* adjust alignment */
     f->align = align;
+
+    /* preprocess text */
+    if(!f->preprocessed_text.is_dirty)
+        f->preprocessed_text.is_dirty = is_dirty;
 }
 
 /*
@@ -579,17 +682,48 @@ void font_set_align(font_t* f, fontalign_t align)
  */
 int font_get_maxlength(const font_t* f)
 {
-    return f->length;
+    return f->max_length;
 }
 
 /*
  * font_set_maxlength()
  * Set the maximum number of characters that can be printed, ignoring color tags and blanks
  */
-void font_set_maxlength(font_t* f, int maxlength)
+void font_set_maxlength(font_t* f, int max_length)
 {
-    f->length = clip(maxlength, 0, FONT_TEXTMAXSIZE - 1);
+    bool is_dirty = false;
+
+    /* validate */
+    max_length = max(-1, max_length);
+    is_dirty = (f->max_length != max_length);
+
+    /* adjust length */
+    f->max_length = max_length;
+
+    /* preprocess text */
+    if(!f->preprocessed_text.is_dirty)
+        f->preprocessed_text.is_dirty = is_dirty;
 }
+
+/*
+ * font_get_filepath()
+ * Get the relative path of the file (image, truetype font...) that originates this font
+ */
+const char* font_get_filepath(const font_t* f)
+{
+    return f->drv->filepath(f->drv);
+}
+
+/*
+ * font_get_image()
+ * Get the image atlas if it's a bitmap font;
+ * otherwise NULL is returned
+ */
+const image_t* font_get_image(const font_t* f)
+{
+    return f->drv->image(f->drv);
+}
+
 
 
 /* ------------------------------------------------- */
@@ -597,208 +731,201 @@ void font_set_maxlength(font_t* f, int maxlength)
 /* ------------------------------------------------- */
 
 /* returns a static char* (case insensitive search) */
-const char* get_variable(const char *key)
+const char* read_variable(const char* key, void* data)
 {
-    fontcallback_t fun = callbacktable_find(key);
-    static char buf[1024];
+    const char* value = NULL;
 
-    if(fun != NULL)
-        return fun();
-    else
-        return lang_getstring(key+1, buf, sizeof(buf)); /* skip the '$' */
+    if(key[0] >= '1' && key[0] <= '9') {
+        /* read $1, $2 ... $9 */
+        const char** args = (const char**)data;
+        int index = key[0] - '1';
+
+        if(index >= 0 && index < FONTARGS_MAX)
+            value = args[index]; /* may be NULL */
+    }
+    else {
+        /* read $IDENTIFIER */
+        fontcallback_t fun = callbacktable_find(key);
+        static char buf[1024];
+
+        if(fun != NULL)
+            value = fun();
+        else
+            value = lang_getstring(key, buf, sizeof(buf));
+    }
+
+    return value != NULL ? value : "null";
 }
 
+/*
 
-/* expands the variables, e.g.,
+expands the variables, e.g.,
 
-   "Please press the $INPUT_LEFT to go left"
+   "Welcome to $LEVEL_NAME"
             ... becomes ...
-   "Please press the LEFT CTRL KEY to go left"
+   "Welcome to Sunshine Paradise"
+
 */
-void expand_variables(char *str, fontargs_t args, size_t size)
+int expand_vars(char* dest, const char* src, size_t dest_size, const char* (*callback)(const char*,void*), void* data)
 {
-    static char buf[FONT_TEXTMAXSIZE];
-    char *p = str, *q = buf;
+    char acc[256];
+    const int accsize = sizeof(acc) - 1;
+    enum { COPYING, ACCUMULATING_DIGIT, ACCUMULATING_IDENTIFIER, ACCUMULATING_EXPRESSION } state = COPYING;
+    int curly_counter = 0, number_of_substitutions = 0;
+    int m = (int)dest_size - 1;
+    int a, i, j;
 
-    /* expand into buf */
-    while(*p && (q - buf < sizeof(buf) - 1)) {
-        /* scanning... */
-        while(*p && *p != '$' && (q - buf < sizeof(buf) - 1))
-            *(q++) = *(p++);
+    #define APPEND(str) do { \
+        const char* p = (str); \
+        while(*p && j < m) \
+            dest[j++] = *(p++); \
+        number_of_substitutions++; \
+    } while(0);
 
-        /* found a variable or a pattern ($1, $2...) */
-        if(*p == '$' && IS_VAR_ANYCHAR(p[1])) {
-            char varname[64], *r;
-            const char *value = NULL, *u;
+    for(i = j = 0; '\0' != src[i] && j < m; i++) {
+        char curr_char = src[i], next_char = src[i+1];
 
-            /* detect the name of this variable */
-            r = varname;
-            do {
-                *(r++) = *(p++);
-            } while(IS_VAR_ANYCHAR(*p) && (r - varname < sizeof(varname) - 1));
-            *r = '\0';
+        switch(state) {
+            /* copy char */
+            case COPYING: {
+                if(curr_char == '$') {
+                    a = 0; /* initialize the accumulator */
 
-            /* get the contents of varname */
-            if(!IS_VAR_1STCHAR(varname[1])) {
-                /* match $1, $2, ... */
-                if(varname[1] >= '1' && varname[1] <= '0' + FONTARGS_MAX)
-                    value = args[ varname[1] - '1' ]; /* may be NULL */
-                if(value == NULL)
-                    value = varname; /* get the digit if there is no argument */
+                    if(next_char == '{') {
+                        state = ACCUMULATING_EXPRESSION;
+                        curly_counter = 0; /* reset curly counter */
+                        i++; /* skip this curly brace */
+                        break;
+                    }
+                    else if(next_char >= '1' && next_char <= '9') {
+                        state = ACCUMULATING_DIGIT;
+                        break;
+                    }
+                    else if(isalpha(next_char) || next_char == '_') {
+                        state = ACCUMULATING_IDENTIFIER;
+                        break;
+                    }
+                }
+
+                /* copy 'til the end */
+                dest[j++] = curr_char;
+                break;
             }
-            else {
-                /* match a variable */
-                value = get_variable(varname);
+
+
+
+            /* match $1, $2 ... $9 */
+            case ACCUMULATING_DIGIT: {
+                bool match = (curr_char >= '1' && curr_char <= '9'); /* true, redundant */
+
+                if(match) {
+                    acc[0] = curr_char;
+                    acc[1] = '\0';
+                }
+
+                APPEND(callback(acc, data));
+                state = COPYING;
+                break;
             }
 
-            /* put it into buf */
-            if((u = value) != NULL) {
-                while(*u && (q - buf < sizeof(buf) - 1))
-                    *(q++) = *(u++);
+
+
+            /* match $IDENTIFIER */
+            case ACCUMULATING_IDENTIFIER: {
+                bool match = (isalnum(curr_char) || curr_char == '_');
+                bool last_char = ('\0' == next_char);
+
+                if(match) {
+                    if(a < accsize)
+                        acc[a++] = curr_char;
+                }
+
+                if(last_char || !match) {
+                    acc[a] = '\0';
+                    if(!match)
+                        i--; /* put back */
+
+                    APPEND(callback(acc, data));
+                    state = COPYING;
+                }
+
+                break;
+            }
+
+
+
+            /* match ${EXPRESSION} */
+            case ACCUMULATING_EXPRESSION: {
+                bool match = ((curr_char != '}' || curly_counter > 0) && curr_char != '\0');
+                bool last_char = ('\0' == next_char);
+
+                if(match) {
+                    if(a < accsize)
+                        acc[a++] = curr_char;
+
+                    if(src[i] == '{')
+                        ++curly_counter;
+                    else if(src[i] == '}')
+                        --curly_counter;
+                }
+
+                if(last_char || !match) {
+                    char expr[256];
+                    acc[a] = '\0';
+
+                    number_of_substitutions += expand_vars(expr, acc, sizeof(expr), callback, data);
+                    APPEND(callback(expr, data));
+                    state = COPYING;
+                }
+
+                break;
             }
         }
-        else if(*p == '$' && (q - buf < sizeof(buf) - 1))
-            *(q++) = *(p++); /* found a single dollar sign */
     }
-    *q = '\0';
 
-    /* copy back into str */
-    str_cpy(str, buf, size);
+    dest[j] = '\0';
+    return number_of_substitutions;
 }
 
-
 /* does the string have variables or patterns ($1, $2...) to expand? */
-bool has_variables_to_expand(const char *str, int *passes)
+bool has_vars_to_expand(const char* str)
 {
-    const int MAX_PASSES = 3; /* won't expand more times than this */
+    #define MATCH1(c) (isalnum(c) || (c) == '_' || (c) == '{')
 
-    if(++(*passes) > MAX_PASSES)
-        return false;
-
-    for(; *str; str++) {
-        if(*str == '$' && IS_VAR_ANYCHAR(str[1]))
+    for(const char *p = str; *p; p++) {
+        if(*p == '$' && MATCH1(p[1]))
             return true;
     }
 
     return false;
 }
 
-
 /* convert to ascii */
-void convert_to_ascii(char* str)
+char* convert_to_ascii(char* str)
 {
     char *p, *q;
 
-    for(q = p = str; *p; p++) {
+    for(q = p = str; *p != '\0'; p++) {
         if(!(*p & 0x80))
             *(q++) = *p;
     }
 
-    *q = 0;
-}
-
-/* will print a single line of text with the specified font,
-   returning its height */
-int print_line(const fontdrv_t *drv, const char* text, int x, int y, color_t color_stack[], int* stack_top)
-{
-    static char linebuf[FONT_TEXTMAXSIZE];
-    char *p, *q;
-    size_t j = 0;
-    uint32_t chr, tag = 0;
-    #define _print_linebuf() \
-        do { \
-            if(*linebuf) { \
-                drv->textout(drv, linebuf, x, y, color_stack[*stack_top]); \
-                x += drv->textsize(drv, linebuf).x + drv->charspacing(drv).x; \
-            } \
-            *(p = linebuf) = 0; \
-        } while(0)
-
-    *(p = linebuf) = 0;
-    while((chr = u8_nextchar(text, &j)) != 0) {
-        if(!tag && chr == '<' && IS_TAG_1STCHAR(text[j])) {
-            /* read tag */
-            const char* tag_name = text + j;
-            if(tag_name[0] != '/') {
-                /* open tag */
-                if(strncmp(tag_name, "color=", 6) == 0) {
-                    /* color tag */
-                    const char* color_code = tag_name + 6;
-                    char hex_code[7] = { 0 }; int i = 0;
-                    if(*color_code == '#') /* skip '#', if any */
-                        ++color_code;
-                    while(*color_code && *color_code != '>' && i < sizeof(hex_code) - 1) /* read color */
-                        hex_code[i++] = *(color_code++);
-                    if(*stack_top + 1 < FONT_STACKCAPACITY) { /* push color */
-                        _print_linebuf();
-                        color_stack[++(*stack_top)] = color_hex(hex_code);
-                    }
-                }
-                tag = 1;
-            }
-            else {
-                /* close tag */
-                if(strncmp(tag_name, "/color>", 7) == 0) {
-                    if(*stack_top > 0) {
-                        _print_linebuf();
-                        --(*stack_top);
-                    }
-                }
-                tag = 1;
-            }
-        }
-        else if(tag) {
-            /* skip tag */
-            if(chr == '>')
-                tag = 0;
-        }
-        else {
-            /* buffer character */
-            char buf[5] = { 0 };
-            u8_wc_toutf8(buf, chr);
-            for(q = buf; *q && p - linebuf < sizeof(linebuf) - 1; *p = 0)
-                *(p++) = *(q++);
-        }
-    }
-    _print_linebuf();
-
-    /* return the height of the printed line */
-    return drv->textsize(drv, " ").y + drv->charspacing(drv).y;
-}
-
-/* print a line with a certain alignment, returning its height */
-int print_aligned_line(const fontdrv_t *drv, const char* text, fontalign_t align, int x, int y, color_t color_stack[], int* stack_top)
-{
-    int dx = 0;
-
-    switch(align) {
-        case FONTALIGN_LEFT:
-            break;
-
-        case FONTALIGN_CENTER:
-            dx = drv->textsize(drv, text).x * 0.5f;
-            break;
-
-        case FONTALIGN_RIGHT:
-            dx = drv->textsize(drv, text).x;
-            break;
-    }
-
-    return print_line(drv, text, x - dx, y, color_stack, stack_top);
+    *q = '\0';
+    return str;
 }
 
 /* find the next point where a wordwrap should be placed */
 char* find_wordwrap(const fontdrv_t* drv, char* text, int max_width)
 {
     if(max_width > 0) {
-        static int blank[1024];
-        int blanks = find_blanks(blank, sizeof(blank), text);
+        static int blank[FONT_BLANKSMAXSIZE]; /* WARNING: using a fixed-length array. We just process single-line of text, though. */
+        int blanks = find_blanks(text, blank, sizeof(blank) / sizeof(int));
         int m, l = 0, r = blanks - 1;
         int best_m = 0, width;
         char *wordwrap, chr;
 
         /* check if there is no wordwrap */
-        if(blanks == 0 || (int)drv->textsize(drv, text).x <= max_width)
+        if(blanks == 0 || drv->line_width(drv, text) <= max_width)
             return NULL;
 
         /*
@@ -816,7 +943,7 @@ char* find_wordwrap(const fontdrv_t* drv, char* text, int max_width)
 
             /* compute the width of text[0 .. blank[m]-1] */
             chr = text[blank[m]]; text[blank[m]] = 0;
-            width = drv->textsize(drv, text).x;
+            width = drv->line_width(drv, text);
             text[blank[m]] = chr;
 
             if(width > max_width) {
@@ -831,7 +958,12 @@ char* find_wordwrap(const fontdrv_t* drv, char* text, int max_width)
         }
 
         /* skip spaces */
-        for(wordwrap = text + blank[best_m] + 1; *wordwrap && isspace(*wordwrap); wordwrap++);
+        /*for(wordwrap = text + blank[best_m] + 1; *wordwrap && isspace(*wordwrap); wordwrap++);*/
+
+        /* skip spaces, except the last one (which we'll return) */
+        for(wordwrap = text + blank[best_m]; *wordwrap && isspace(wordwrap[1]); wordwrap++);
+        if(*wordwrap == '\0')
+            return NULL;
 
         /* done */
         return wordwrap;
@@ -841,7 +973,7 @@ char* find_wordwrap(const fontdrv_t* drv, char* text, int max_width)
 }
 
 /* find all indexes of the text containing blank spaces */
-int find_blanks(int blank[], size_t size, const char* text)
+int find_blanks(const char* text, int blank[], size_t size)
 {
     const char* p;
     int n = 0;
@@ -858,37 +990,30 @@ int find_blanks(int blank[], size_t size, const char* text)
     return n; /* returns the number of blank spaces */
 }
 
-
 /* character number to byte offset in a tagged text
    returns NULL if there is no such character */
-static char* tagged_text_offset(char* txt, int charnum)
+char* tagged_text_offset(char* text, int charnum)
 {
     uint32_t chr;
     size_t i, prev_i;
-    int tag = 0;
+    bool tag = false;
 
-    /* lookup */
-    for(prev_i = i = 0; (chr = u8_nextchar(txt, &i)) != 0; prev_i = i) {
-        if(!tag && chr == '<' && IS_TAG_1STCHAR(txt[i]))
-            tag = 1;
-        else if(tag && chr == '>')
-            tag = 0;
-        else if(!tag && !isspace(chr) && charnum-- == 0)
-            return txt + prev_i;
+    /* validate */
+    if(charnum < 0)
+        charnum = 0;
+
+    /* search */
+    for(prev_i = i = 0; (chr = u8_nextchar(text, &i)) != 0; prev_i = i) {
+        if(tag)
+            tag = (chr != '>');
+        else if(chr == '<' && IS_TAG_1STCHAR(text[i]))
+            tag = true;
+        else if(!isspace(chr) && chr != FONT_COLORBREAKPOINT && charnum-- == 0)
+            return text + prev_i;
     }
 
     /* character not found */
     return NULL;
-}
-
-/* join_names(): joins name and lang_id into a single string
-   you must free() the returned pointer after usage */
-char* join_names(const char* name, const char* lang_id)
-{
-    size_t size = (2 + strlen(name) + strlen(lang_id));
-    char* str = mallocx(size * sizeof(*str));
-    snprintf(str, size, "%s:%s", name, lang_id);
-    return str;
 }
 
 /* true if we must refresh the font driver
@@ -910,35 +1035,400 @@ void refresh_driver(font_t* fnt)
     fnt->drv = fontdrv_list_find_ex(fnt->name, fnt->lang_id);
     if(fnt->drv == NULL)
         fatal_error("Can't find font \"%s\"", fnt->name);
+
+    /* preprocess the text */
+    fnt->preprocessed_text.is_dirty = true;
+}
+
+/* join_names(): joins name and lang_id into a single string
+   you must free() the returned pointer after usage */
+char* join_names(const char* name, const char* lang_id)
+{
+    size_t size = (2 + strlen(name) + strlen(lang_id));
+    char* str = mallocx(size * sizeof(*str));
+    snprintf(str, size, "%s:%s", name, lang_id);
+    return str;
+}
+
+
+
+
+/* ------------------------------------------------- */
+/* text preprocessing */
+/* ------------------------------------------------- */
+
+/* expand variables */
+void preprocess_expand(char* dest, char* tmp, size_t dest_size, fontargs_t args)
+{
+    const int MAX_PASSES = 3;
+
+    /* expand variables */
+    for(int k = 0; k < MAX_PASSES && has_vars_to_expand(dest); k++) {
+        int len = strlen(dest);
+        memcpy(tmp, dest, len+1);
+        expand_vars(dest, tmp, dest_size, read_variable, (void*)args);
+    }
+
+    /* utf8 check */
+    if(!u8_isvalid(dest, strlen(dest)))
+        convert_to_ascii(dest);
+}
+
+/* extract substring (aware of blanks & tags); this may change the input text */
+char* preprocess_substring(char* text, int index_of_first_char, int max_length)
+{
+    char* substring = text;
+
+    if(index_of_first_char >= 0) {
+        substring = tagged_text_offset(substring, index_of_first_char);
+        if(substring == NULL)
+            return text + strlen(text); /* empty string */
+    }
+
+    if(max_length >= 0) {
+        char* p = tagged_text_offset(substring, max_length);
+        if(p != NULL)
+            *p = '\0';
+    }
+
+    return substring;
+}
+
+/* preprocess colors */
+void preprocess_colors(fonttext_t* out, const char* text)
+{
+    const color_t DEFAULT_COLOR = color_rgb(255, 255, 255); /* we use multiplicative blending */
+    color_t stack[FONT_STACKCAPACITY];
+    int stack_top = 0;
+    bool tag = false;
+
+    /* initialize the string buffer */
+    darray_clear(out->buffer);
+
+    /* initialize the color stack */
+    stack[0] = DEFAULT_COLOR;
+    stack_top = 0;
+
+    /* register the first color */
+    darray_clear(out->color_sequence);
+    darray_push(out->color_sequence, stack[0]);
+
+    /* scan the string */
+    for(const char* p = text; *p != '\0'; p++) {
+        if(tag) {
+            /* skip characters until we close the tag */
+            tag = (*p != '>');
+        }
+        else if(*p == '<' && IS_TAG_1STCHAR(p[1])) {
+            /* read tag */
+            //const char* tag_name = text + i;
+            const char* tag_name = p + 1;
+            tag = true; /* we must skip the characters of the tag */
+
+            /* is this a closing tag? */
+            if(*tag_name == '/') {
+
+                /* close a <color> tag - as in </color> */
+                if(0 == strncmp(tag_name + 1, "color>", 6)) {
+                    /* pop the stack */
+                    color_t prev_color = stack[stack_top];
+                    color_t next_color = stack_top > 0 ? stack[--stack_top] : stack[0];
+
+                    /* register the color */
+                    if(!color_equals(next_color, prev_color)) {
+                        darray_push(out->color_sequence, next_color);
+                        darray_push(out->buffer, FONT_COLORBREAKPOINT); /* not matched by isspace() */
+                    }
+                }
+
+            }
+            else {
+
+                /* open a <color> tag - as in <color=ffffff> */
+                if(0 == strncmp(tag_name, "color=", 6)) {
+                    const char* color_code = tag_name + 6;
+                    char hex_code[9] = { 0 };
+
+                    /* skip a preceding '#', if it exists */
+                    if(*color_code == '#')
+                        color_code++;
+
+                    /* read the color_code and store it into the hex_code */
+                    for(int h = 0; h < 8 && isalnum(*color_code); h++)
+                        hex_code[h] = *color_code++; /* up to 8 characters (RGBA in hex notation) */
+
+                    /* push the color onto the stack */
+                    color_t prev_color = stack[stack_top];
+                    color_t next_color = color_hex(hex_code);
+                    if(stack_top + 1 < FONT_STACKCAPACITY)
+                        stack[++stack_top] = next_color;
+                    else
+                        next_color = prev_color; /* stack is full; ignore color */
+
+                    /* register the color */
+                    if(!color_equals(next_color, prev_color)) {
+                        darray_push(out->color_sequence, next_color);
+                        darray_push(out->buffer, FONT_COLORBREAKPOINT);
+                    }
+                }
+            }
+        }
+        else {
+            /* add character to the buffer */
+            darray_push(out->buffer, *p);
+        }
+    }
+
+    /* rtrim the string buffer */
+    for(char* p = out->buffer + (darray_length(out->buffer) - 1); p > out->buffer && isspace(*p); p--)
+        *p = '\0';
+
+    /* complete the string buffer */
+    darray_push(out->buffer, '\0');
+}
+
+/* preprocess wordwrap */
+void preprocess_wordwrap(fonttext_t* out, const fontdrv_t* drv, int max_width)
+{
+    char* r;
+    int line_width = 0;
+    darray_clear(out->line_width);
+
+    for(char* p = out->buffer, *q, *w ;;) {
+        /* we must scan one line at a time */
+        if(NULL != (q = strchr(p, '\n')))
+            *q = '\0';
+
+        /* now p is a single line of text */
+        while(NULL != (w = find_wordwrap(drv, p, max_width))) {
+            *w = '\0';
+
+            for(r = w-1; r > p && isspace(*r); r--) *r = '\0'; /* rtrim(p) to correctly calculate the width of the line */
+            line_width = drv->line_width(drv, p);
+            darray_push(out->line_width, line_width);
+            for(r = w-1; r > p && *r == '\0'; r--) *r = ' '; /* "undo" rtrim(p) */
+
+            *w = '\n'; /* replace a space by a newline */
+            p = w + 1;
+        }
+
+        /* compute the width of the remaining text of the current line */
+        line_width = drv->line_width(drv, p);
+        darray_push(out->line_width, line_width);
+
+        /* this was the last line; no more line breaks nor wordwraps */
+        if(q == NULL)
+            break;
+
+        /* put the newline back and continue */
+        *q = '\n';
+        p = q + 1;
+    }
+}
+
+/* split the buffer into segments */
+void preprocess_split(fonttext_t* out, const fontdrv_t* drv, fontalign_t align)
+{
+    const color_t DEFAULT_COLOR = color_rgb(255, 255, 255); /* we use multiplicative blending */
+    const char* current_segment = out->buffer;
+    color_t color = DEFAULT_COLOR;
+    point2d_t offset = point2d_new(0, 0);
+    int color_cursor = 0;
+    int line_cursor = 0;
+    int line_width = 0;
+    int line_height = drv->line_height(drv);
+    int accum_segment_width = 0;
+    float alignment_multiplier = (
+        (float)(align == FONTALIGN_CENTER) * 0.5f + (float)(align == FONTALIGN_RIGHT)
+    );
+
+    assertx(darray_length(out->line_width) > 0);
+    assertx(darray_length(out->color_sequence) > 0);
+
+    darray_clear(out->text_segment);
+    darray_clear(out->color);
+    darray_clear(out->offset);
+    out->total_size = v2d_new(0, 0);
+
+    color = out->color_sequence[0];
+    line_width = out->line_width[0];
+    offset.x = -line_width * alignment_multiplier;
+    offset.y = 0;
+    accum_segment_width = 0;
+
+    for(char* p = out->buffer; p < out->buffer + darray_length(out->buffer); p++) {
+        if(*p == FONT_COLORBREAKPOINT) {
+            /* close segment */
+            *p = '\0';
+
+            /* compute the size of the segment */
+            int segment_width = drv->line_width(drv, current_segment);
+            int segment_height = line_height;
+            v2d_t segment_size = v2d_new(segment_width, segment_height);
+
+            /* add segment */
+            darray_push(out->text_segment, current_segment);
+            darray_push(out->color, color);
+            darray_push(out->offset, offset);
+            darray_push(out->size, segment_size);
+
+            /* next offset */
+            offset.x += segment_width;
+            /*offset.y += 0;*/
+
+            /* total size */
+            accum_segment_width += segment_width;
+            out->total_size.x = max(out->total_size.x, accum_segment_width);
+
+            /* color change */
+            if(color_cursor + 1 < darray_length(out->color_sequence)) /* we have to check; what if the control character is manually placed by the user? */
+                color = out->color_sequence[++color_cursor];
+
+            /* next segment */
+            current_segment = p + 1;
+        }
+        else if(*p == '\n') {
+            /* line break */
+            if(line_cursor + 1 < darray_length(out->line_width))
+                line_width = out->line_width[++line_cursor];
+
+            /* close segment */
+            *p = '\0';
+
+            /* compute the size of the segment */
+            int segment_width = drv->line_width(drv, current_segment);
+            int segment_height = line_height;
+            v2d_t segment_size = v2d_new(segment_width, segment_height);
+
+            /* add segment */
+            darray_push(out->text_segment, current_segment);
+            darray_push(out->color, color);
+            darray_push(out->offset, offset);
+            darray_push(out->size, segment_size);
+
+            /* next offset */
+            offset.x = -line_width * alignment_multiplier;
+            offset.y += line_height;
+
+            /* total size */
+            accum_segment_width = 0;
+            out->total_size.y += line_height;
+
+            /* next segment */
+            current_segment = p + 1;
+        }
+        else if(*p == '\0') {
+            /* end of string */
+
+            /* close segment */
+            /* *p = '\0'; */
+
+            /* compute the size of the segment */
+            int segment_width = drv->line_width(drv, current_segment);
+            int segment_height = line_height;
+            v2d_t segment_size = v2d_new(segment_width, segment_height);
+
+            /* add segment */
+            darray_push(out->text_segment, current_segment);
+            darray_push(out->color, color);
+            darray_push(out->offset, offset);
+            darray_push(out->size, segment_size);
+
+            /* total size */
+            accum_segment_width += segment_width;
+            out->total_size.x = max(out->total_size.x, accum_segment_width);
+            out->total_size.y += line_height;
+
+            /* exit */
+            break;
+        }
+    }
+}
+
+/* preprocess a text for rendering */
+void preprocess_text(fonttext_t* out, const fontdrv_t* drv, const char* text, int max_width, fontalign_t align, fontargs_t args, int index_of_first_char, int max_length)
+{
+    static char buf[FONT_TEXTMAXSIZE], tmp[FONT_TEXTMAXSIZE];
+    char* substr;
+
+    /* reset arrays */
+    darray_clear(out->text_segment);
+    darray_clear(out->color);
+    darray_clear(out->offset);
+    darray_clear(out->line_width);
+    darray_clear(out->color_sequence);
+    darray_clear(out->buffer);
+
+    /* copy text to a temporary buffer */
+    str_cpy(buf, text, sizeof(buf));
+
+    /* expand variables */
+    preprocess_expand(buf, tmp, sizeof(buf), args);
+
+    /* preprocess substring */
+    substr = preprocess_substring(buf, index_of_first_char, max_length);
+
+    /* preprocess colors */
+    preprocess_colors(out, substr);
+
+    /* set wordwrap points */
+    preprocess_wordwrap(out, drv, max_width);
+
+    /* split the text into segments */
+    preprocess_split(out, drv, align);
+
+#if 0
+    /* test */
+    for(int i = 0; i < darray_length(out->text_segment); i++) {
+        static char hex[32];
+        const char* text = out->text_segment[i];
+        int x = out->offset[i].x;
+        int y = out->offset[i].y;
+        color_to_hex(out->color[i], hex, sizeof hex);
+        printf("i=% 3d, color=%6s, offset=% 3d,% 3d\t\t: \"%s\"\n", i, hex, x, y, text);
+    }
+#endif
+}
+
+/* preprocess the font before the rendering takes place */
+void preprocess(font_t* f)
+{
+    /* no need to do anything */
+    if(!f->preprocessed_text.is_dirty)
+        return;
+
+    /* preprocess the font and clear up the is_dirty flag */
+    preprocess_text(&f->preprocessed_text, f->drv, f->text, f->max_width, f->align, f->argument, f->index_of_first_char, f->max_length);
+    f->preprocessed_text.is_dirty = false;
 }
 
 /* ------------------------------------------------- */
 /* read the font scripts */
 /* ------------------------------------------------- */
 
-int traverse(const parsetree_statement_t *stmt)
+int traverse(const parsetree_statement_t* stmt)
 {
-    const char *id = nanoparser_get_identifier(stmt);
-    const parsetree_parameter_t *param_list = nanoparser_get_parameter_list(stmt);
+    const char* id = nanoparser_get_identifier(stmt);
+    const parsetree_parameter_t* param_list = nanoparser_get_parameter_list(stmt);
 
     if(str_icmp(id, "font") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const parsetree_parameter_t *p2 = nanoparser_get_nth_parameter(param_list, 2);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
         fontscript_t header;
-        fontdrv_t *drv;
-        char *name;
+        fontdrv_t* drv;
+        char* name;
 
         /* read the data */
         nanoparser_expect_string(p1, "Font script error: font name is expected");
         name = str_dup(nanoparser_get_string(p1));
-        logfile_message("Loading font \"%s\" defined in \"%s\" near line %d", name, nanoparser_get_file(stmt), nanoparser_get_line_number(stmt));
+        logfile_message("Loading font script \"%s\" defined in \"%s\" near line %d", name, nanoparser_get_file(stmt), nanoparser_get_line_number(stmt));
 
         /* is this a language-specific font? */
         if(nanoparser_get_number_of_parameters(param_list) > 2) {
-            const parsetree_parameter_t *opt_p2 = nanoparser_get_nth_parameter(param_list, 2);
-            const parsetree_parameter_t *opt_p3 = nanoparser_get_nth_parameter(param_list, 3);
-            const char *lang_id = NULL;
-            char *lang_specific_name = NULL;
+            const parsetree_parameter_t* opt_p2 = nanoparser_get_nth_parameter(param_list, 2);
+            const parsetree_parameter_t* opt_p3 = nanoparser_get_nth_parameter(param_list, 3);
+            const char* lang_id = NULL;
+            char* lang_specific_name = NULL;
 
             /* read the language ID */
             nanoparser_expect_string(opt_p2, "Font script error: expected \"for\"");
@@ -1004,12 +1494,12 @@ int traverse(const parsetree_statement_t *stmt)
     return 0;
 }
 
-int traverse_block(const parsetree_statement_t *stmt, void *data)
+int traverse_block(const parsetree_statement_t* stmt, void* data)
 {
-    fontscript_t *header = (fontscript_t*)data;
-    const char *id = nanoparser_get_identifier(stmt);
-    const parsetree_parameter_t *param_list = nanoparser_get_parameter_list(stmt);
-    const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
+    fontscript_t* header = (fontscript_t*)data;
+    const char* id = nanoparser_get_identifier(stmt);
+    const parsetree_parameter_t* param_list = nanoparser_get_parameter_list(stmt);
+    const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
 
     nanoparser_expect_program(p1, "Font script error: block data is expected after the type of the font");
 
@@ -1025,13 +1515,12 @@ int traverse_block(const parsetree_statement_t *stmt, void *data)
     }
     else if(str_icmp(id, "bitmap") == 0) {
         /* default configuration */
-        int i, n = sizeof(header->data.bmp.chr) / sizeof(charproperties_t);
-
         header->type = FONTSCRIPTTYPE_BMP;
         strcpy(header->data.bmp.source_file, "");
         header->data.bmp.spacing[0] = 1; /* default spacing */
         header->data.bmp.spacing[1] = 1;
-        for(i = 0; i < n; i++) {
+
+        for(int i = 0; i < FONT_MAXBITMAPGLYPHS; i++) {
             /* initialize all characters to: unspecified */
             header->data.bmp.chr[i].valid = false;
             header->data.bmp.chr[i].index = -1;
@@ -1039,11 +1528,12 @@ int traverse_block(const parsetree_statement_t *stmt, void *data)
             header->data.bmp.chr[i].source_rect.y = 0;
             header->data.bmp.chr[i].source_rect.width = 0;
             header->data.bmp.chr[i].source_rect.height = 0;
+            header->data.bmp.chr[i].offset = point2d_new(0, 0);
         }
 
         nanoparser_traverse_program_ex(nanoparser_get_program(p1), data, traverse_bmp);
 
-        for(i = 0; i < n; i++) {
+        for(int i = 0; i < FONT_MAXBITMAPGLYPHS; i++) {
             /* has the user declared a keymap? (monospaced bitmap font) */
             if(header->data.bmp.chr[i].index >= 0 && header->data.bmp.chr[i].source_rect.width > 0) {
                 /* find the source_rect of individual characters (keymap) */
@@ -1063,24 +1553,24 @@ int traverse_block(const parsetree_statement_t *stmt, void *data)
     return 0;
 }
 
-int traverse_bmp(const parsetree_statement_t *stmt, void *data)
+int traverse_bmp(const parsetree_statement_t* stmt, void* data)
 {
-    fontscript_t *header = (fontscript_t*)data;
-    const char *id = nanoparser_get_identifier(stmt);
-    const parsetree_parameter_t *param_list = nanoparser_get_parameter_list(stmt);
+    fontscript_t* header = (fontscript_t*)data;
+    const char* id = nanoparser_get_identifier(stmt);
+    const parsetree_parameter_t* param_list = nanoparser_get_parameter_list(stmt);
 
     if(str_icmp(id, "source_file") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
 
         nanoparser_expect_string(p1, "Font script error: a relative filepath is expected in source_file");
 
         str_cpy(header->data.bmp.source_file, nanoparser_get_string(p1), sizeof(header->data.bmp.source_file));
     }
     else if(str_icmp(id, "source_rect") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const parsetree_parameter_t *p2 = nanoparser_get_nth_parameter(param_list, 2);
-        const parsetree_parameter_t *p3 = nanoparser_get_nth_parameter(param_list, 3);
-        const parsetree_parameter_t *p4 = nanoparser_get_nth_parameter(param_list, 4);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
+        const parsetree_parameter_t* p3 = nanoparser_get_nth_parameter(param_list, 3);
+        const parsetree_parameter_t* p4 = nanoparser_get_nth_parameter(param_list, 4);
 
         nanoparser_expect_string(p1, "Font script error: source_rect expects four parameters: source_x, source_y, width, height");
         nanoparser_expect_string(p2, "Font script error: source_rect expects four parameters: source_x, source_y, width, height");
@@ -1093,9 +1583,8 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
         header->data.bmp.source_rect[3] = max(1, atoi(nanoparser_get_string(p4)));
     }
     else if(str_icmp(id, "frame_size") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const parsetree_parameter_t *p2 = nanoparser_get_nth_parameter(param_list, 2);
-        int i, n = sizeof(header->data.bmp.chr) / sizeof(charproperties_t);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
         int width, height;
 
         nanoparser_expect_string(p1, "Font script error: frame_size expects two parameters: char_width, char_height");
@@ -1103,7 +1592,7 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
 
         width = max(0, atoi(nanoparser_get_string(p1)));
         height = max(0, atoi(nanoparser_get_string(p2)));
-        for(i = 0; i < n; i++) {
+        for(int i = 0; i < FONT_MAXBITMAPGLYPHS; i++) {
             if(header->data.bmp.chr[i].source_rect.width <= 0) {
                 header->data.bmp.chr[i].source_rect.width = width;
                 header->data.bmp.chr[i].source_rect.height = height;
@@ -1111,8 +1600,8 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
         }
     }
     else if(str_icmp(id, "keymap") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const char *keymap;
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const char* keymap;
         size_t i, prev_i;
         uint32_t chr;
 
@@ -1120,7 +1609,7 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
 
         keymap = nanoparser_get_string(p1);
         for(prev_i = i = 0; (chr = u8_nextchar(keymap, &i)) != 0; prev_i = i) {
-            if(chr <= 0xFF) {
+            if(chr < FONT_MAXBITMAPGLYPHS) {
                 if(!header->data.bmp.chr[chr].valid) {
                     header->data.bmp.chr[chr].index = prev_i;
                     header->data.bmp.chr[chr].valid = true;
@@ -1129,8 +1618,8 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
         }
     }
     else if(str_icmp(id, "spacing") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const parsetree_parameter_t *p2 = nanoparser_get_nth_parameter(param_list, 2);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
 
         nanoparser_expect_string(p1, "Font script error: spacing expects two parameters: x, y");
         nanoparser_expect_string(p2, "Font script error: spacing expects two parameters: x, y");
@@ -1139,14 +1628,16 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
         header->data.bmp.spacing[1] = atoi(nanoparser_get_string(p2));
     }
     else if(str_icmp(id, "char") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const parsetree_parameter_t *p2 = nanoparser_get_nth_parameter(param_list, 2);
-        int c;
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
 
         nanoparser_expect_string(p1, "Font script error: a character is expected in char");
-        c = *(nanoparser_get_string(p1));
 
-        nanoparser_traverse_program_ex(nanoparser_get_program(p2), (void*)(header->data.bmp.chr + c), traverse_bmp_char);
+        size_t i = 0;
+        uint32_t c = u8_nextchar(nanoparser_get_string(p1), &i);
+
+        if(c < FONT_MAXBITMAPGLYPHS)
+            nanoparser_traverse_program_ex(nanoparser_get_program(p2), &header->data.bmp.chr[c], traverse_bmp_char);
     }
     else
         fatal_error("Font script error: unknown keyword '%s' in bitmap font", id);
@@ -1154,17 +1645,17 @@ int traverse_bmp(const parsetree_statement_t *stmt, void *data)
     return 0;
 }
 
-int traverse_bmp_char(const parsetree_statement_t *stmt, void *data)
+int traverse_bmp_char(const parsetree_statement_t* stmt, void* data)
 {
-    charproperties_t *chr = (charproperties_t*)data;
-    const char *id = nanoparser_get_identifier(stmt);
-    const parsetree_parameter_t *param_list = nanoparser_get_parameter_list(stmt);
+    charproperties_t* chr = (charproperties_t*)data;
+    const char* id = nanoparser_get_identifier(stmt);
+    const parsetree_parameter_t* param_list = nanoparser_get_parameter_list(stmt);
 
     if(str_icmp(id, "source_rect") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const parsetree_parameter_t *p2 = nanoparser_get_nth_parameter(param_list, 2);
-        const parsetree_parameter_t *p3 = nanoparser_get_nth_parameter(param_list, 3);
-        const parsetree_parameter_t *p4 = nanoparser_get_nth_parameter(param_list, 4);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
+        const parsetree_parameter_t* p3 = nanoparser_get_nth_parameter(param_list, 3);
+        const parsetree_parameter_t* p4 = nanoparser_get_nth_parameter(param_list, 4);
 
         nanoparser_expect_string(p1, "Font script error: source_rect expects four parameters: source_x, source_y, width, height");
         nanoparser_expect_string(p2, "Font script error: source_rect expects four parameters: source_x, source_y, width, height");
@@ -1178,28 +1669,38 @@ int traverse_bmp_char(const parsetree_statement_t *stmt, void *data)
         chr->index = -1;
         chr->valid = true;
     }
+    else if(str_icmp(id, "offset") == 0) {
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p2 = nanoparser_get_nth_parameter(param_list, 2);
+
+        nanoparser_expect_string(p1, "Font script error: offset expects two parameters: offset_x, offset_y");
+        nanoparser_expect_string(p2, "Font script error: offset expects two parameters: offset_x, offset_y");
+
+        chr->offset.x = atoi(nanoparser_get_string(p1));
+        chr->offset.y = atoi(nanoparser_get_string(p2));
+    }
     else
         fatal_error("Font script error: unknown keyword '%s' in bitmap font", id);
 
     return 0;
 }
 
-int traverse_ttf(const parsetree_statement_t *stmt, void *data)
+int traverse_ttf(const parsetree_statement_t* stmt, void* data)
 {
-    fontscript_t *header = (fontscript_t*)data;
-    const char *id = nanoparser_get_identifier(stmt);
-    const parsetree_parameter_t *param_list = nanoparser_get_parameter_list(stmt);
+    fontscript_t* header = (fontscript_t*)data;
+    const char* id = nanoparser_get_identifier(stmt);
+    const parsetree_parameter_t* param_list = nanoparser_get_parameter_list(stmt);
 
     if(str_icmp(id, "source_file") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
 
         nanoparser_expect_string(p1, "Font script error: a relative filepath is expected in source_file");
 
         str_cpy(header->data.ttf.source_file, nanoparser_get_string(p1), sizeof(header->data.ttf.source_file));
     }
     else if(str_icmp(id, "size") == 0) {
-        const parsetree_parameter_t *p1 = nanoparser_get_nth_parameter(param_list, 1);
-        const char *err = "Font script error: a positive integer is expected in size";
+        const parsetree_parameter_t* p1 = nanoparser_get_nth_parameter(param_list, 1);
+        const char* err = "Font script error: a positive integer is expected in size";
         int n;
 
         nanoparser_expect_string(p1, err);
@@ -1219,14 +1720,333 @@ int traverse_ttf(const parsetree_statement_t *stmt, void *data)
     return 0;
 }
 
-int dirfill(const char *vpath, void *param)
+int dirfill(const char* vpath, void* param)
 {
-    const char *fullpath = assetfs_fullpath(vpath);
-    parsetree_program_t** p = (parsetree_program_t**)param;
-    *p = nanoparser_append_program(*p, nanoparser_construct_tree(fullpath));
+    (void)param;
+
+    const char* fullpath = asset_path(vpath);
+    parsetree_program_t* p = nanoparser_construct_tree(fullpath);
+    nanoparser_traverse_program(p, traverse);
+    nanoparser_deconstruct_tree(p);
     return 0;
 }
 
+
+/* ------------------------------------------------- */
+/* list of fontdrv_t */
+/* ------------------------------------------------- */
+
+void fontdrv_list_init()
+{
+    fontdrv_list = NULL;
+}
+
+void fontdrv_list_add(const char* name, fontdrv_t* drv)
+{
+    fontdrv_list_t* x = mallocx(sizeof *x);
+    x->name = str_dup(name);
+    x->data = drv;
+    x->next = fontdrv_list;
+    fontdrv_list = x;
+}
+
+void fontdrv_list_release()
+{
+    fontdrv_list_t *x, *next;
+
+    for(x = fontdrv_list; x; x = next) {
+        next = x->next;
+        free(x->name);
+        x->data->release(x->data);
+        free(x);
+    }
+}
+
+fontdrv_t* fontdrv_list_find(const char* name)
+{
+    fontdrv_list_t* x;
+
+    for(x = fontdrv_list; x; x = x->next) {
+        if(str_icmp(x->name, name) == 0)
+            return x->data;
+    }
+
+    return NULL;
+}
+
+/* find the language-specific font driver, or
+   return the generic one if it doesn't exist */
+fontdrv_t* fontdrv_list_find_ex(const char* name, const char* lang_id)
+{
+    char* language_specific_font_name = join_names(name, lang_id);
+    fontdrv_t* drv = fontdrv_list_find(language_specific_font_name);
+
+    if(drv == NULL)
+        drv = fontdrv_list_find(name);
+
+    free(language_specific_font_name);
+    return drv;
+}
+
+
+/* ------------------------------------------------- */
+/* bitmap fonts */
+/* ------------------------------------------------- */
+
+fontdrv_t* fontdrv_bmp_new(const char* source_file, charproperties_t chr[], int spacing[2])
+{
+    fontdrv_bmp_t* f = mallocx(sizeof *f);
+    const image_t* img = image_load(source_file);
+
+    /* initialize the vtable */
+    ((fontdrv_t*)f)->textout = fontdrv_bmp_textout;
+    ((fontdrv_t*)f)->line_width = fontdrv_bmp_linewidth;
+    ((fontdrv_t*)f)->line_height = fontdrv_bmp_lineheight;
+    ((fontdrv_t*)f)->filepath = fontdrv_bmp_filepath;
+    ((fontdrv_t*)f)->image = fontdrv_bmp_image;
+    ((fontdrv_t*)f)->release = fontdrv_bmp_release;
+
+    /* initialize the glyphs */
+    for(int j = 0; j < FONT_MAXBITMAPGLYPHS; j++)
+        f->glyph[j] = NULL;
+
+    /* set the image atlas */
+    f->atlas = img;
+
+    /* configure the spritesheet */
+    f->line_height = 0;
+    for(int j = 1 + FONT_COLORBREAKPOINT; j < FONT_MAXBITMAPGLYPHS; j++) {
+        if(chr[j].valid) {
+            f->glyph[j] = image_create_shared(img, chr[j].source_rect.x, chr[j].source_rect.y, chr[j].source_rect.width, chr[j].source_rect.height);
+            f->glyph_offset[j] = chr[j].offset;
+            f->line_height = max(f->line_height, chr[j].source_rect.height);
+        }
+    }
+    f->spacing = v2d_new(spacing[0], spacing[1]);
+    f->line_height += spacing[1];
+
+    /* validation */
+    if(f->line_height <= spacing[1])
+        fatal_error("Font script error: bitmap font \"%s\" has no valid characters.", source_file);
+
+    /* copy the source file */
+    f->filepath = str_dup(source_file);
+
+    /* done! ;) */
+    return (fontdrv_t*)f;
+}
+
+void fontdrv_bmp_release(fontdrv_t* fnt)
+{
+    fontdrv_bmp_t* f = (fontdrv_bmp_t*)fnt;
+
+    for(int i = 0; i < FONT_MAXBITMAPGLYPHS; i++) {
+        if(f->glyph[i] != NULL)
+            image_destroy(f->glyph[i]);
+    }
+
+    image_unload(f->atlas);
+
+    free(f->filepath);
+    free(f);
+}
+
+void fontdrv_bmp_textout(const fontdrv_t* fnt, const char* text, int x, int y, color_t color)
+{
+    const fontdrv_bmp_t* f = (const fontdrv_bmp_t*)fnt;
+    int hsp = f->spacing.x;
+    int vsp = f->spacing.y;
+    uint32_t c = 0;
+
+    for(size_t i = 0; (c = u8_nextchar(text, &i)) != 0; ) {
+        point2d_t glyph_offset;
+        const image_t* glyph = find_bmp_glyph(f, c, &glyph_offset);
+        if(glyph != NULL) {
+            int dy = f->line_height - vsp - image_height(glyph);
+            image_draw_tinted(glyph, x + glyph_offset.x, y + dy + glyph_offset.y, color, IF_NONE);
+            x += image_width(glyph) + hsp;
+        }
+    }
+}
+
+int fontdrv_bmp_lineheight(const fontdrv_t* fnt)
+{
+    const fontdrv_bmp_t* f = (const fontdrv_bmp_t*)fnt;
+    return f->line_height;
+}
+
+int fontdrv_bmp_linewidth(const fontdrv_t* fnt, const char* text)
+{
+    const fontdrv_bmp_t* f = (const fontdrv_bmp_t*)fnt;
+    int hsp = f->spacing.x;
+    int space = 0;
+    int line_width = 0;
+    uint32_t c = 0;
+
+    for(size_t i = 0; (c = u8_nextchar(text, &i)) != 0; ) {
+        const image_t* glyph = find_bmp_glyph(f, c, NULL);
+        if(glyph != NULL) {
+            line_width += image_width(glyph) + space;
+            space = (text[i] != '\0') ? hsp : 0;
+        }
+    }
+
+    return line_width;
+}
+
+const char* fontdrv_bmp_filepath(const fontdrv_t* fnt)
+{
+    const fontdrv_bmp_t* f = (const fontdrv_bmp_t*)fnt;
+    return f->filepath;
+}
+
+const image_t* fontdrv_bmp_image(const fontdrv_t* fnt)
+{
+    const fontdrv_bmp_t* f = (const fontdrv_bmp_t*)fnt;
+    return f->atlas;
+}
+
+const image_t* find_bmp_glyph(const fontdrv_bmp_t* f, uint32_t codepoint, point2d_t* out_offset)
+{
+    if(codepoint < FONT_MAXBITMAPGLYPHS) {
+        const image_t* glyph = f->glyph[codepoint]; /* possibly NULL */
+
+        if(out_offset != NULL && glyph != NULL)
+            *out_offset = f->glyph_offset[codepoint];
+
+        return glyph;
+    }
+
+    return NULL;
+}
+
+/* ------------------------------------------------- */
+/* ttf fonts */
+/* ------------------------------------------------- */
+
+fontdrv_t* fontdrv_ttf_new(const char* source_file, int size, bool antialias, bool shadow)
+{
+    /* basic setup */
+    fontdrv_ttf_t* f = mallocx(sizeof *f);
+    ((fontdrv_t*)f)->textout = fontdrv_ttf_textout;
+    ((fontdrv_t*)f)->line_width = fontdrv_ttf_linewidth;
+    ((fontdrv_t*)f)->line_height = fontdrv_ttf_lineheight;
+    ((fontdrv_t*)f)->filepath = fontdrv_ttf_filepath;
+    ((fontdrv_t*)f)->image = fontdrv_ttf_image;
+    ((fontdrv_t*)f)->release = fontdrv_ttf_release;
+
+    /* store font attributes */
+    f->filepath = str_dup(source_file);
+    f->size = max(size, 0); /* height of glyphs in pixels */
+    f->antialias = antialias;
+    f->shadow = shadow;
+    f->line_height = 0;
+
+    /* lazy loading */
+    f->font = NULL;
+
+    /* done! */
+    return (fontdrv_t*)f;
+}
+
+void fontdrv_ttf_textout(const fontdrv_t* fnt, const char* text, int x, int y, color_t color)
+{
+    const fontdrv_ttf_t* f = (const fontdrv_ttf_t*)fnt;
+    int flags = ALLEGRO_ALIGN_LEFT | ALLEGRO_ALIGN_INTEGER;
+
+    if(!has_loaded_ttf(f))
+        load_ttf((fontdrv_ttf_t*)f);
+
+    /* draw shadow */
+    if(f->shadow) {
+        ALLEGRO_COLOR black = al_map_rgb(0, 0, 0);
+        al_draw_text(f->font, black, x, y + 1.0f, flags, text);
+        al_draw_text(f->font, black, x + 1.0f, y + 1.0f, flags, text);
+        if(f->size >= 18) /* TODO: configurable shadows */
+            al_draw_text(f->font, black, x + 2.0f, y + 2.0f, flags, text);
+    }
+
+    /* draw text */
+    al_draw_text(f->font, color._color, x, y, flags, text);
+}
+
+void fontdrv_ttf_release(fontdrv_t* fnt)
+{
+    fontdrv_ttf_t* f = (fontdrv_ttf_t*)fnt;
+
+    if(has_loaded_ttf(f))
+        unload_ttf(f);
+
+    free(f->filepath);
+    free(f);
+}
+
+int fontdrv_ttf_lineheight(const fontdrv_t* fnt)
+{
+    return ((const fontdrv_ttf_t*)fnt)->line_height;
+}
+
+int fontdrv_ttf_linewidth(const fontdrv_t* fnt, const char* text)
+{
+    char buffer[256];
+    const int maxlen = sizeof(buffer) - 1;
+    const fontdrv_ttf_t* f = (const fontdrv_ttf_t*)fnt;
+
+    /* empty string? */
+    if(*text == '\0')
+        return 0;
+
+    /* lazily load the font */
+    if(!has_loaded_ttf(f))
+        load_ttf((fontdrv_ttf_t*)f);
+
+    /* filter out characters used as breakpoints */
+    const char* p = text; int i = 0;
+    while(i < maxlen && *p != '\0') {
+        if(*p != '\n' && *p != FONT_COLORBREAKPOINT)
+            buffer[i++] = *p;
+        p++;
+    }
+    buffer[i] = '\0';
+
+    /* compute the width */
+    return al_get_text_width(f->font, buffer);
+}
+
+const char* fontdrv_ttf_filepath(const fontdrv_t* fnt)
+{
+    const fontdrv_ttf_t* f = (const fontdrv_ttf_t*)fnt;
+    return f->filepath;
+}
+
+const image_t* fontdrv_ttf_image(const fontdrv_t* fnt)
+{
+    /* there is no image atlas */
+    return NULL;
+}
+
+bool has_loaded_ttf(const fontdrv_ttf_t* f)
+{
+    return f->font != NULL;
+}
+
+void load_ttf(fontdrv_ttf_t* f)
+{
+    const char* fullpath = asset_path(f->filepath);
+
+    logfile_message("Loading TrueType font \"%s\"...", fullpath);
+
+    f->font = al_load_ttf_font(fullpath, -(f->size), !(f->antialias) ? ALLEGRO_TTF_MONOCHROME : 0);
+    if(f->font == NULL)
+        fatal_error("Failed to load TrueType font \"%s\"", fullpath);
+
+    f->line_height = al_get_font_line_height(f->font);
+}
+
+void unload_ttf(fontdrv_ttf_t* f)
+{
+    al_destroy_font(f->font);
+}
 
 /* ------------------------------------------------- */
 /* callback table */
@@ -1242,349 +2062,62 @@ void callbacktable_release()
     callback_table = hashtable_fontcallback_t_destroy(callback_table);
 }
 
-void callbacktable_add(const char *variable_name, fontcallback_t callback)
+void callbacktable_add(const char* variable_name, fontcallback_t callback)
 {
     hashtable_fontcallback_t_add(callback_table, variable_name, (fontcallback_t*)callback);
 }
 
-fontcallback_t callbacktable_find(const char *variable_name)
+fontcallback_t callbacktable_find(const char* variable_name)
 {
     return (fontcallback_t)hashtable_fontcallback_t_find(callback_table, variable_name);
 }
 
 
 /* ------------------------------------------------- */
-/* list of fontdrv_t */
+/* (legacy) predefined vars */
 /* ------------------------------------------------- */
+static const char* f_dollar() { return "$"; }
+static const char* f_lowerthan() { return "<"; }
+static const char* f_greaterthan() { return ">"; }
+static const char* f_empty() { return ""; }
+static const char* f_level_name() { return level_name(); }
+static const char* f_level_version() { return level_version(); }
+static const char* f_level_author() { return level_author(); }
+static const char* f_level_act() { return str_from_int(level_act(), NULL, 0); }
+static const char* f_player_name() { return level_player() != NULL ? player_name(level_player()) : "null"; }
+static const char* f_input_type() { return input_is_joystick_enabled() || mobilegamepad_is_available() ? "JOY" : "KEYB"; }
+static const char* f_engine_name() { return GAME_TITLE; }
+static const char* f_engine_version() { return GAME_VERSION_STRING; }
+static const char* f_engine_website() { return GAME_WEBSITE; }
+static const char* f_engine_year() { return GAME_YEAR; }
+static const char* f_game_name() { return opensurge_game_name(); }
+static const char* f_game_version() { return opensurge_game_version(); }
+static const char* f_game_website() { return GAME_WEBSITE; }
+static const char* f_game_year() { return GAME_YEAR; }
 
-void fontdrv_list_init()
+
+/*
+ * register_predefined_vars()
+ * Registers lots of useful predefined variables
+ */
+void register_predefined_vars()
 {
-    fontdrv_list = NULL;
-}
-
-void fontdrv_list_add(const char *name, fontdrv_t *drv)
-{
-    fontdrv_list_t *x = mallocx(sizeof *x);
-    x->name = str_dup(name);
-    x->data = drv;
-    x->next = fontdrv_list;
-    fontdrv_list = x;
-}
-
-void fontdrv_list_release()
-{
-    fontdrv_list_t *x, *next;
-
-    for(x=fontdrv_list; x; x=next) {
-        next = x->next;
-        free(x->name);
-        x->data->release(x->data);
-        free(x);
-    }
-}
-
-fontdrv_t* fontdrv_list_find(const char *name)
-{
-    fontdrv_list_t *x;
-
-    for(x=fontdrv_list; x; x=x->next) {
-        if(str_icmp(x->name, name) == 0)
-            return x->data;
-    }
-
-    return NULL;
-}
-
-/* find the language-specific font driver, or
-   return the generic one if it doesn't exist */
-fontdrv_t* fontdrv_list_find_ex(const char *name, const char *lang_id)
-{
-    char* language_specific_font_name = join_names(name, lang_id);
-    fontdrv_t *drv = fontdrv_list_find(language_specific_font_name);
-
-    if(drv == NULL)
-        drv = fontdrv_list_find(name);
-
-    free(language_specific_font_name);
-    return drv;
-}
-
-
-/* ------------------------------------------------- */
-/* bitmap fonts */
-/* ------------------------------------------------- */
-
-fontdrv_t* fontdrv_bmp_new(const char *source_file, charproperties_t chr[], int spacing[2])
-{
-    fontdrv_bmp_t *f = mallocx(sizeof *f);
-    image_t *img = image_load(source_file);
-    int j, n = sizeof(f->bmp) / sizeof(image_t*);
-
-    ((fontdrv_t*)f)->textout = fontdrv_bmp_textout;
-    ((fontdrv_t*)f)->textsize = fontdrv_bmp_textsize;
-    ((fontdrv_t*)f)->charspacing = fontdrv_bmp_charspacing;
-    ((fontdrv_t*)f)->release = fontdrv_bmp_release;
-
-    /* configure the spritesheet */
-    f->line_height = 0;
-    for(j = 0; j < n; j++) {
-        f->bmp[j] = NULL;
-        if(chr[j].valid) {
-            f->bmp[j] = image_create_shared(img, chr[j].source_rect.x, chr[j].source_rect.y, chr[j].source_rect.width, chr[j].source_rect.height);
-            f->line_height = max(f->line_height, chr[j].source_rect.height);
-        }
-    }
-    f->spacing = v2d_new(spacing[0], spacing[1]);
-
-    /* validation */
-    if(f->line_height == 0)
-        fatal_error("Font script error: font \"%s\" has got no valid characters.", source_file);
-
-    /* done! ;) */
-    return (fontdrv_t*)f;
-}
-
-void fontdrv_bmp_textout(const fontdrv_t *fnt, const char* text, int x, int y, color_t color)
-{
-    const fontdrv_bmp_t *f = (const fontdrv_bmp_t*)fnt;
-    uint32_t chr, n = sizeof(f->bmp) / sizeof(image_t*);
-    color_t white = color_rgb(255, 255, 255);
-    image_t *chimg;
-
-    /* currently, bitmap fonts only support the
-       first 256 Unicode characters, though that
-       can be expanded in the future */
-
-    for(size_t i = 0; (chr = u8_nextchar(text, &i)) != 0; ) {
-        if(chr < n && (chimg = f->bmp[chr]) != NULL) {
-            if(!color_equals(color, white))
-                image_draw_tinted(chimg, x, y + f->line_height - image_height(chimg), color, IF_NONE);
-            else
-                image_draw(chimg, x, y + f->line_height - image_height(chimg), IF_NONE);
-            x += image_width(chimg) + (int)f->spacing.x;
-        }
-    }
-}
-
-void fontdrv_bmp_release(fontdrv_t *fnt)
-{
-    fontdrv_bmp_t *f = (fontdrv_bmp_t*)fnt;
-    int i, n = sizeof(f->bmp) / sizeof(image_t*);
-
-    for(i=0; i<n; i++) {
-        if(f->bmp[i] != NULL)
-            image_destroy(f->bmp[i]);
-    }
-
-    free(f);
-}
-
-v2d_t fontdrv_bmp_charspacing(const fontdrv_t *fnt)
-{
-    return ((const fontdrv_bmp_t*)fnt)->spacing;
-}
-
-v2d_t fontdrv_bmp_textsize(const fontdrv_t *fnt, const char *string)
-{
-    const fontdrv_bmp_t *f = (const fontdrv_bmp_t*)fnt;
-    v2d_t sp = f->spacing;
-    int width = 0, line_width = 0;
-    int height = f->line_height;
-    bool tag = false;
-    const char* p;
-
-    for(p = string; *p; p++) {
-        if(!tag && *p == '<' && IS_TAG_1STCHAR(p[1]))
-            tag = true;
-        else if(tag && *p == '>')
-            tag = false;
-        else if(tag)
-            continue;
-        else if(*p == '\n') {
-            height += f->line_height + (int)sp.y;
-            line_width = 0;
-        }
-        else if(f->bmp[(int)(*p) & 0xFF] != NULL) {
-            line_width += image_width(f->bmp[(int)(*p) & 0xFF]);
-            if(p[1])
-                line_width += (int)sp.x;
-        }
-        width = max(width, line_width);
-    }
-
-    return v2d_new(width, height);
-}
-
-/* ------------------------------------------------- */
-/* ttf fonts */
-/* ------------------------------------------------- */
-
-fontdrv_t* fontdrv_ttf_new(const char *source_file, int size, bool antialias, bool shadow)
-{
-    const char *fullpath = assetfs_fullpath(source_file);
-
-    /* basic setup */
-    fontdrv_ttf_t *f = mallocx(sizeof *f);
-    ((fontdrv_t*)f)->textout = fontdrv_ttf_textout;
-    ((fontdrv_t*)f)->textsize = fontdrv_ttf_textsize;
-    ((fontdrv_t*)f)->charspacing = fontdrv_ttf_charspacing;
-    ((fontdrv_t*)f)->release = fontdrv_ttf_release;
-
-    /* load font */
-    logfile_message("Loading TrueType font \"%s\"...", fullpath);
-    f->size = max(size, 0); /* height of glyphs in pixels */
-    f->antialias = allow_antialias && antialias;
-    f->shadow = shadow;
-
-#if defined(A5BUILD)
-    f->font = al_load_ttf_font(fullpath, -(f->size), !(f->antialias) ? ALLEGRO_TTF_MONOCHROME : 0);
-    if(f->font == NULL)
-        fatal_error("Failed to load TrueType font \"%s\"", fullpath);
-#else
-    f->ttf = alfont_load_font(fullpath);
-    if(f->ttf != NULL)
-        alfont_set_font_size(f->ttf, f->size);
-    else
-        fatal_error("Couldn't load TrueType font \"%s\"", fullpath);
-#endif
-
-    /* done! */
-    return (fontdrv_t*)f;
-}
-
-void fontdrv_ttf_textout(const fontdrv_t *fnt, const char* text, int x, int y, color_t color)
-{
-    const fontdrv_ttf_t *f = (const fontdrv_ttf_t*)fnt;
-
-#if defined(A5BUILD)
-    /* draw shadow */
-    if(f->shadow) {
-        ALLEGRO_COLOR black = al_map_rgb(0, 0, 0);
-        al_draw_text(f->font, black, x, y + 1.0f, ALLEGRO_ALIGN_INTEGER, text);
-        al_draw_text(f->font, black, x + 1.0f, y + 1.0f, ALLEGRO_ALIGN_INTEGER, text);
-    }
-
-    /* draw text */
-    al_draw_text(f->font, color._color, x, y, ALLEGRO_ALIGN_INTEGER, text);
-#else
-    do {
-        image_t *img = video_get_backbuffer();
-
-        /* draw shadow */
-        if(f->shadow) {
-            color_t black = color_rgb(0, 0, 0);
-            alfont_set_font_style(f->ttf, STYLE_BOLD);
-            alfont_textout_ex(IMAGE2BITMAP(img), f->ttf, text, x, y+1, black._value, -1);
-            alfont_set_font_style(f->ttf, STYLE_STANDARD);
-        }
-
-        /* draw text */
-        if(f->antialias)
-            alfont_textout_aa_ex(IMAGE2BITMAP(img), f->ttf, text, x, y, color._value, -1);
-        else
-            alfont_textout_ex(IMAGE2BITMAP(img), f->ttf, text, x, y, color._value, -1);
-    } while(0);
-#endif
-}
-
-void fontdrv_ttf_release(fontdrv_t *fnt)
-{
-    fontdrv_ttf_t* f = (fontdrv_ttf_t*)fnt;
-#if defined(A5BUILD)
-    al_destroy_font(f->font);
-#else
-    alfont_destroy_font(f->ttf);
-#endif
-    free(f);
-}
-
-v2d_t fontdrv_ttf_charspacing(const fontdrv_t *fnt)
-{
-#if defined(A5BUILD)
-    /* FIXME: is this function still needed? */
-    return v2d_new(0, 0);
-#else
-    const fontdrv_ttf_t *f = (const fontdrv_ttf_t*)fnt;
-    return v2d_new(alfont_get_char_extra_spacing(f->ttf), 0);
-#endif
-}
-
-v2d_t fontdrv_ttf_textsize(const fontdrv_t *fnt, const char *string)
-{
-#if defined(A5BUILD)
-    static char linebuf[FONT_TEXTMAXSIZE]; char *p, *q;
-    const fontdrv_ttf_t *f = (const fontdrv_ttf_t*)fnt;
-    int width = 0, line_width = 0;
-    int line_height = al_get_font_line_height(f->font);
-    int height = line_height;
-    bool tag = false;
-    size_t i = 0;
-    uint32_t ch;
-
-    *(p = linebuf) = 0;
-    while(string[i]) {
-        ch = u8_nextchar(string, &i);
-        if(!tag && ch == '<' && IS_TAG_1STCHAR(string[i]))
-            tag = true;
-        else if(tag && ch == '>')
-            tag = false;
-        else if(tag)
-            continue;
-        else if(ch == '\n') {
-            line_width += *linebuf ? al_get_text_width(f->font, linebuf) : 0;
-            width = max(width, line_width);
-            *(p = linebuf) = 0;
-            line_width = 0;
-            height += line_height;
-        }
-        else {
-            char buf[5] = { 0 };
-            u8_wc_toutf8(buf, ch);
-            for(q = buf; *q && p - linebuf < sizeof(linebuf) - 1; *p = 0)
-                *(p++) = *(q++);
-        }
-    }
-
-    line_width += *linebuf ? al_get_text_width(f->font, linebuf) : 0;
-    width = max(width, line_width);
-    return v2d_new(width, height);
-#else
-    static char linebuf[FONT_TEXTMAXSIZE]; char *p, *q;
-    const fontdrv_ttf_t *f = (const fontdrv_ttf_t*)fnt;
-    v2d_t sp = v2d_new(alfont_get_char_extra_spacing(f->ttf), 0);
-    int width = 0, line_width = 0;
-    int line_height = alfont_text_height(f->ttf);
-    int height = line_height;
-    bool tag = false;
-    size_t i = 0;
-    uint32_t ch;
-
-    *(p = linebuf) = 0;
-    while(string[i]) {
-        ch = u8_nextchar(string, &i);
-        if(!tag && ch == '<' && IS_TAG_1STCHAR(string[i]))
-            tag = true;
-        else if(tag && ch == '>')
-            tag = false;
-        else if(tag)
-            continue;
-        else if(ch == '\n') {
-            line_width += *linebuf ? alfont_text_length(f->ttf, linebuf) : 0;
-            width = max(width, line_width);
-            *(p = linebuf) = 0;
-            line_width = 0;
-            height += line_height + (int)sp.y;
-        }
-        else {
-            char buf[5] = { 0 };
-            u8_wc_toutf8(buf, ch);
-            for(q = buf; *q && p - linebuf < sizeof(linebuf) - 1; *p = 0)
-                *(p++) = *(q++);
-        }
-    }
-
-    line_width += *linebuf ? alfont_text_length(f->ttf, linebuf) : 0;
-    width = max(width, line_width);
-    return v2d_new(width, height);
-#endif
+    font_register_variable("DOLLAR", f_dollar);
+    font_register_variable("LT", f_lowerthan);
+    font_register_variable("GT", f_greaterthan);
+    font_register_variable("EMPTY", f_empty);
+    font_register_variable("LEVEL_NAME", f_level_name);
+    font_register_variable("LEVEL_VERSION", f_level_version);
+    font_register_variable("LEVEL_AUTHOR", f_level_author);
+    font_register_variable("LEVEL_ACT", f_level_act);
+    font_register_variable("PLAYER_NAME", f_player_name);
+    font_register_variable("INPUT_TYPE", f_input_type);
+    font_register_variable("ENGINE_NAME", f_engine_name);
+    font_register_variable("ENGINE_VERSION", f_engine_version);
+    font_register_variable("ENGINE_WEBSITE", f_engine_website);
+    font_register_variable("ENGINE_YEAR", f_engine_year);
+    font_register_variable("GAME_NAME", f_game_name);
+    font_register_variable("GAME_VERSION", f_game_version);
+    font_register_variable("GAME_WEBSITE", f_game_website);
+    font_register_variable("GAME_YEAR", f_game_year);
 }

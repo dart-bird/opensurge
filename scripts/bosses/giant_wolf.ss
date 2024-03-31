@@ -22,7 +22,7 @@ using SurgeEngine.Collisions.Sensor;
 object "Giant Wolf" is "entity", "boss", "awake"
 {
     public onDefeat = Event();
-    public hp = 4; // health points
+    public hp = 5; // health points
 
     actor = Actor("Giant Wolf's Body");
     head = spawn("Giant Wolf's Head");
@@ -111,28 +111,30 @@ object "Giant Wolf" is "entity", "boss", "awake"
     // the boss got hit
     fun getHit()
     {
-        if(hp > 0) {
-            // lift hands
-            leftHand.lift();
-            rightHand.lift();
+        // the boss has been defeated
+        if(hp == 0)
+            return;
 
-            // deciding the next state
-            // according to the hp
-            hp--;
-            if(hp == 0) {
-                chase.enabled = false;
-                leftHand.stop();
-                rightHand.stop();
-                head.explode(explosionTime);
-                state = "exploding";
-            }
-            else if(hp <= angryHp) {
-                head.getAngry();
-                state = "angry";
-            }
-            else
-                state = "chasing player";
+        // lift hands
+        leftHand.lift();
+        rightHand.lift();
+
+        // deciding the next state
+        // according to the hp
+        hp--;
+        if(hp == 0) {
+            chase.enabled = false;
+            leftHand.stop();
+            rightHand.stop();
+            head.explode(explosionTime);
+            state = "exploding";
         }
+        else if(hp <= angryHp) {
+            head.getAngry();
+            state = "angry";
+        }
+        else
+            state = "chasing player";
     }
 
     // is the boss angry?
@@ -198,6 +200,7 @@ object "Giant Wolf" is "entity", "boss", "awake"
 object "Giant Wolf's Head" is "private", "entity", "awake"
 {
     wolf = parent;
+    eyes = spawn("Giant Wolf's Eyes");
     actor = Actor("Giant Wolf's Head");
     collider = CollisionBall(64);
     transform = Transform();
@@ -210,16 +213,12 @@ object "Giant Wolf's Head" is "private", "entity", "awake"
 
     state "main"
     {
+        //collider.visible = true; // debug
         actor.zindex = 0.41;
         actor.anim = 0;
         transform.localPosition = Vector2(0, -216);
         nextState = "eyes open";
         state = nextState;
-
-        // debug
-        /*
-        collider.visible = true;
-        */
     }
 
     state "eyes open"
@@ -263,6 +262,11 @@ object "Giant Wolf's Head" is "private", "entity", "awake"
             state = nextState;
     }
 
+    fun isVulnerable()
+    {
+        return state == "eyes open" || state == "angry";
+    }
+
     fun explode(durationInSeconds)
     {
         // get hit & explode
@@ -280,7 +284,7 @@ object "Giant Wolf's Head" is "private", "entity", "awake"
 
     fun onCollision(otherCollider)
     {
-        if(wolf.isActivated() && state != "defeated") {
+        if(wolf.isActivated() && isVulnerable()) {
             if(otherCollider.entity.hasTag("player")) {
                 player = otherCollider.entity;
                 if(player.attacking) {
@@ -460,5 +464,64 @@ object "Giant Wolf's Hand Impact" is "private", "entity", "disposable"
     {
         if(actor.animation.finished)
             destroy();
+    }
+}
+
+// the midpoint between the two eyes
+object "Giant Wolf's Eyes" is "private", "entity", "awake"
+{
+    public readonly transform = Transform();
+    eyeballs = spawn("Giant Wolf's Eyeballs");
+    leftEye = spawn("Giant Wolf's Moving Eye").setLeft();
+    rightEye = spawn("Giant Wolf's Moving Eye").setRight();
+    //actor = Actor("test"); // debug
+}
+
+// eyeballs
+object "Giant Wolf's Eyeballs" is "private", "entity", "awake"
+{
+    actor = Actor("Giant Wolf's Eyeballs");
+
+    fun constructor()
+    {
+        actor.zindex = 0.39;
+    }
+}
+
+// moving eye
+object "Giant Wolf's Moving Eye" is "private", "entity", "awake"
+{
+    actor = Actor("Giant Wolf's Moving Eye");
+    transform = Transform();
+    sign = 1;
+    distance = 26;
+    maxOffset = Vector2(8, 6);
+
+    state "main"
+    {
+        // look at the player
+        player = Player.active;
+        direction = parent.transform.position.directionTo(player.transform.position);
+        offset = Vector2(direction.x * maxOffset.x, direction.y * maxOffset.y);
+        transform.localPosition = Vector2(sign * distance, 0).plus(offset);
+    }
+
+    fun constructor()
+    {
+        actor.zindex = 0.40;
+    }
+
+    fun setLeft()
+    {
+        sign = -1;
+        actor.anim = 0;
+        return this;
+    }
+
+    fun setRight()
+    {
+        sign = 1;
+        actor.anim = 1;
+        return this;
     }
 }

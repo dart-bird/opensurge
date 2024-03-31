@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * confirmbox.c - confirm box
- * Copyright (C) 2008-2010  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdbool.h>
 #include <string.h>
 #include <math.h>
 #include "confirmbox.h"
@@ -32,13 +33,18 @@
 #include "../core/audio.h"
 #include "../core/timer.h"
 #include "../core/scene.h"
-#include "../core/stringutil.h"
+#include "../util/stringutil.h"
+#include "../scripting/scripting.h"
 
 
 /* private data */
-#define MAX_OPTIONS 5
-#define NO_OPTION   -1
-static image_t *box, *background;
+#define NO_OPTION    -1
+#define OPTION_1      0
+#define OPTION_2      1
+#define MAX_OPTIONS   2
+
+static image_t *background;
+static const image_t *box;
 static v2d_t boxpos;
 static font_t *textfnt;
 static font_t *optionfnt[MAX_OPTIONS][2];
@@ -47,50 +53,48 @@ static input_t *input;
 static char text[1024], option[MAX_OPTIONS][128];
 static int option_count;
 static int current_option = NO_OPTION;
-static int fxfade_in, fxfade_out;
+static bool fxfade_in, fxfade_out;
 
-static void setup(const char *ptext, const char *option1, const char *option2);
+static void setup_message(const confirmboxdata_t* confirmbox);
 
 
 /* public functions */
 
 /*
  * confirmbox_init()
- * Receives an array of 3 strings:
- * - text
- * - option 1
- * - option 2 (may be null)
+ * Receives a pointer to a confirmboxdata_t
  */
-void confirmbox_init(void *text_and_options)
+void confirmbox_init(void *confirmbox)
 {
-    confirmboxdata_t *p = (confirmboxdata_t*)text_and_options;
-    int i;
+    /* setup message & options */
+    setup_message((confirmboxdata_t*)confirmbox);
 
-    setup((*p)[0], (*p)[1], (*p)[2]);
-
-    background = image_clone(video_get_backbuffer());
-
-    box = sprite_get_image(sprite_get_animation("Confirm Box", 0), 0);
+    /* setup gfx */
+    background = video_take_snapshot();
+    box = animation_image(sprite_get_animation("Confirm Box", 0), 0);
     boxpos = v2d_new( (VIDEO_SCREEN_W - image_width(box))/2 , VIDEO_SCREEN_H );
-
-    input = input_create_user(NULL);
     arrow = actor_create();
     actor_change_animation(arrow, sprite_get_animation("UI Pointer", 0));
 
+    /* initialize variables related to the fade effect */
+    fxfade_in = true;
+    fxfade_out = false;
+
+    /* setup fonts */
     textfnt = font_create("dialogbox");
     font_set_text(textfnt, "%s", text);
-    font_set_width(textfnt, image_width(box) - 20);
-
-    for(i=0; i<option_count; i++) {
+    for(int i = 0; i < option_count; i++) {
         optionfnt[i][0] = font_create("dialogbox");
         optionfnt[i][1] = font_create("dialogbox");
         font_set_text(optionfnt[i][0], "%s", option[i]);
         font_set_text(optionfnt[i][1], "<color=$COLOR_HIGHLIGHT>%s</color>", option[i]);
     }
 
-    current_option = 0;
-    fxfade_in = TRUE;
-    fxfade_out = FALSE;
+    /* setup input device */
+    input = input_create_user(NULL);
+
+    /* pause the SurgeScript VM */
+    scripting_pause_vm();
 }
 
 
@@ -100,16 +104,21 @@ void confirmbox_init(void *text_and_options)
  */
 void confirmbox_release()
 {
-    int i;
+    /* unpause the SurgeScript VM */
+    scripting_resume_vm();
 
-    for(i=0; i<option_count; i++) {
+    /* release input device */
+    input_destroy(input);
+
+    /* release fonts */
+    for(int i = 0; i < option_count; i++) {
         font_destroy(optionfnt[i][0]);
         font_destroy(optionfnt[i][1]);
     }
-
-    actor_destroy(arrow);
-    input_destroy(input);
     font_destroy(textfnt);
+
+    /* release gfx */
+    actor_destroy(arrow);
     image_destroy(background);
 }
 
@@ -120,13 +129,14 @@ void confirmbox_release()
  */
 void confirmbox_update()
 {
+    float dt = timer_get_delta(), speed = 5 * VIDEO_SCREEN_H;
+    v2d_t size;
     int i;
-    float dt = timer_get_delta(), speed = 5*VIDEO_SCREEN_H;
 
     /* fade-in */
     if(fxfade_in) {
         if( boxpos.y <= (VIDEO_SCREEN_H - image_height(box))/2 )
-            fxfade_in = FALSE;
+            fxfade_in = false;
         else
             boxpos.y -= speed*dt;
     }
@@ -134,7 +144,7 @@ void confirmbox_update()
     /* fade-out */
     if(fxfade_out) {
         if( boxpos.y >= VIDEO_SCREEN_H ) {
-            fxfade_out = FALSE;
+            fxfade_out = false;
             scenestack_pop();
             return;
         }
@@ -143,12 +153,17 @@ void confirmbox_update()
     }
 
     /* positioning stuff */
-    arrow->position = v2d_new(boxpos.x + current_option * image_width(box)/option_count + 10, boxpos.y + image_height(box) * 0.75 + 2);
-    font_set_position(textfnt, v2d_new(boxpos.x + 10 , boxpos.y + 10));
+    font_set_width(textfnt, image_width(box) - 16);
+    font_set_position(textfnt, v2d_new(boxpos.x + 8 , boxpos.y + 8));
     for(i=0; i<option_count; i++) {
-        font_set_position(optionfnt[i][0], v2d_new(boxpos.x + i * image_width(box)/option_count + 25, boxpos.y + image_height(box) * 0.75));
+        size = font_get_textsize(optionfnt[i][0]);
+        font_set_position(optionfnt[i][0], v2d_new(
+            boxpos.x + (2 * i + 1) * image_width(box) / (2 * option_count) - size.x / 2,
+            boxpos.y + image_height(box) - size.y - 8
+        ));
         font_set_position(optionfnt[i][1], font_get_position(optionfnt[i][0]));
     }
+    arrow->position = font_get_position(optionfnt[current_option][0]);
 
     /* input */
     if(!fxfade_in && !fxfade_out) {
@@ -165,7 +180,7 @@ void confirmbox_update()
         else if(input_button_pressed(input, IB_FIRE1) || input_button_pressed(input, IB_FIRE3)) {
             /* confirm */
             sound_play(SFX_CONFIRM);
-            fxfade_out = TRUE;
+            fxfade_out = true;
         }
     }
 }
@@ -178,8 +193,8 @@ void confirmbox_update()
  */
 void confirmbox_render()
 {
-    int i, k;
     v2d_t cam = v2d_new(VIDEO_SCREEN_W/2, VIDEO_SCREEN_H/2);
+    int i, k;
 
     image_blit(background, 0, 0, 0, 0, image_width(background), image_height(background));
     image_draw(box, boxpos.x, boxpos.y, IF_NONE);
@@ -219,19 +234,22 @@ int confirmbox_selected_option()
 /* ------------ private -------------- */
 
 /*
- * setup()
- * PS: option2 may be NULL
+ * setup_message()
+ * Sets up the message to be displayed
+ * Note: confirmbox->option2 may be NULL
  */
-void setup(const char *ptext, const char *option1, const char *option2)
+void setup_message(const confirmboxdata_t* confirmbox)
 {
-    current_option = -1;
-    str_cpy(text, ptext, sizeof(text));
-    str_cpy(option[0], option1, sizeof(option[0]));
+    /* copy text fields */
+    str_cpy(text, confirmbox->message, sizeof(text));
+    str_cpy(option[0], confirmbox->option1, sizeof(option[0]));
+    str_cpy(option[1], confirmbox->option2 != NULL ? confirmbox->option2 : "", sizeof(option[1]));
 
-    if(option2) {
-        str_cpy(option[1], option2, sizeof(option[1]));
-        option_count = 2;
-    }
-    else
-        option_count = 1;
+    /* number of options */
+    option_count = (confirmbox->option2 != NULL) ? 2 : 1;
+
+    /* default option */
+    current_option = OPTION_1;
+    if(option_count > 1 && confirmbox->default_option == 2)
+        current_option = OPTION_2;
 }

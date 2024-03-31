@@ -126,12 +126,12 @@ object "Enemy" is "private", "entity", "behavior"
     {
         // autodetect collider size
         if(actor != null) {
-            hotspot = actor.animation.hotspot;
+            hotSpot = actor.animation.hotSpot;
             collider.width = actor.width * 0.8;
             collider.height = actor.height * 0.8;
             collider.setAnchor(
-                hotspot.x / actor.width,
-                hotspot.y / actor.height
+                hotSpot.x / actor.width,
+                hotSpot.y / actor.height
             );
         }
 
@@ -169,7 +169,12 @@ object "Enemy" is "private", "entity", "behavior"
     {
         if(enabled && otherCollider.entity.hasTag("player")) {
             player = otherCollider.entity;
-            if(player.attacking && (!invincible || player.invincible)) {
+
+            if(player.frozen && !player.aggressive && !player.inoffensive) {
+                // nothing to do
+                ;
+            }
+            else if(player.attacking && (!invincible || player.invincible)) {
                 // impact the player
                 if(player.midair) {
                     if(actor != null)

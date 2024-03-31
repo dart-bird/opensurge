@@ -632,6 +632,7 @@ object "Spring Behavior" is "private", "entity"
     direction = Vector2.up;
     speed = 600; // 960;
     sensitive = false;
+    hlockTime = 0.27; // used to prevent braking
 
     state "main"
     {
@@ -655,31 +656,70 @@ object "Spring Behavior" is "private", "entity"
             // compute the velocity
             v = direction.scaledBy(speed);
 
-            // boost player
-            if(direction.x != 0) {
-                if(v.x > 0 && v.x > player.speed)
-                    player.speed = v.x;
-                else if(v.x < 0 && v.x < player.speed)
-                    player.speed = v.x;
-            }
-            if(direction.y != 0) {
-                if(player.midair || direction.x != 0 || direction.y < 0) {
-                    if(v.y > 0 && v.y > player.ysp)
-                        player.ysp = v.y;
-                    else if(v.y < 0 && v.y < player.ysp)
-                        player.ysp = v.y;
+            // check if we're running on a wall or on a ceiling
+            slope = Math.deg2rad(player.slope);
+            wallRun = (Math.abs(Math.cos(slope)) < 0.1); // running on a wall
+            ceilRun = (Math.cos(slope) < -0.9); // running on a ceiling
 
-                    // change mode
-                    player.springify();
+            // horizontal spring
+            if(direction.x != 0 && direction.y == 0) {
+                // change speed
+                if(player.midair || wallRun) {
+                    if((v.x > 0 && v.x > player.xsp) || (v.x < 0 && v.x < player.xsp))
+                        player.xsp = v.x;
                 }
                 else {
-                    player.gsp = -v.y;
+                    if((v.x > 0 && v.x > player.xsp) || (v.x < 0 && v.x < player.xsp))
+                        player.gsp = v.x * Math.sign(Math.cos(slope));
+                }
+
+                // prevent braking
+                player.hlock(hlockTime);
+            }
+
+            // vertical spring
+            else if(direction.x == 0 && direction.y != 0) {
+                // change speed
+                if(!wallRun || player.midair || player.jumping) {
+                    if((v.y > 0 && v.y > player.ysp) || (v.y < 0 && v.y < player.ysp)) {
+                        // regular spring
+                        player.ysp = v.y;
+                        player.springify();
+
+                        // velocity swap when running on a ceiling
+                        if(ceilRun)
+                            player.gsp = -player.gsp;
+                    }
+                }
+                else {
+                    // the player is running on a wall
+                    player.gsp = -v.y * Math.sign(Math.sin(slope));
+                    player.hlock(hlockTime);
                 }
             }
 
-            // prevent braking
-            if(direction.x != 0)
-                player.hlock(0.27);
+            // diagonal spring
+            else if(direction.x != 0 && direction.y != 0) {
+                // skip if we're on ceiling mode
+                if(ceilRun && direction.y < 0)
+                    return;
+
+                // change speed
+                if(wallRun || (v.y > 0 && v.y > player.ysp) || (v.y < 0 && v.y < player.ysp)) {
+                    player.ysp = v.y; // gsp affects xsp and ysp when not midair
+                }
+                if(wallRun || (v.x > 0 && v.x > player.xsp) || (v.x < 0 && v.x < player.xsp)) {
+                    player.xsp = v.x;
+                    player.gsp = v.x;
+                }
+
+                // springify & prevent braking
+                player.springify();
+                player.hlock(hlockTime);
+            }
+
+            // debug
+            //Console.print([player.xsp, player.ysp, player.gsp]);
 
             // play sound
             if(sfx != null)

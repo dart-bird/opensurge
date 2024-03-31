@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
- * sprite.h - code for the sprites/animations
- * Copyright (C) 2008-2009  Alexandre Martins <alemartf@gmail.com>
+ * sprite.h - sprite manager
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -21,73 +21,76 @@
 #ifndef _SPRITE_H
 #define _SPRITE_H
 
-#include <stdio.h>
-#include "v2d.h"
-#include "image.h"
-#include "nanoparser/nanoparser.h"
+#include <stdbool.h>
+#include "../util/rect.h"
 
-typedef struct animation_t animation_t;
+/* forward declarations */
 typedef struct spriteinfo_t spriteinfo_t;
-
-/* animation */
-/* this represents an animation */
-struct animation_t {
-    int id; /* id of the animation */
-    int repeat; /* repeat animation? */
-    float fps; /* frames per second */
-    int frame_count; /* how many frames does this animation have? */
-    int *data; /* frame vector */
-    v2d_t hot_spot; /* hot spot */
-    image_t **frame_data; /* reference to spriteinfo->frame_data */
-    int repeat_from; /* n. if repeat == TRUE, jump back to the n-th frame of the animation. Defaults to zero */
-};
-
-/* sprite info */
-/* spriteinfo_t represents only ONE sprite (meta data), with several animations */
-struct spriteinfo_t {
-    char *source_file;
-    int rect_x, rect_y, rect_w, rect_h;
-    int frame_w, frame_h;
-    v2d_t hot_spot;
-
-    int frame_count; /* every frame related to this sprite */
-    image_t **frame_data; /* image_t* vector */
-
-    int animation_count;
-    animation_t **animation_data; /* animation_t* vector */
-};
+struct parsetree_program_t;
+struct collisionmask_t;
+struct animation_t;
+struct proganim_t;
+struct image_t;
 
 
 
-/* === sprite management: public methods === */
+/*
+ * Sprite system
+ */
 
-/* initializes the sprite module */
+/* initializes the sprite system */
 void sprite_init();
 
-/* releases the sprite module */
+/* releases the sprite system */
 void sprite_release();
 
-/* returns the required animation */
-animation_t *sprite_get_animation(const char *sprite_name, int anim_id);
-
-/* returns the specified frame of the given animation */
-struct image_t *sprite_get_image(const animation_t *anim, int frame_id);
-
 /* checks if an animation exists */
-int sprite_animation_exists(const char* sprite_name, int anim_id);
+bool sprite_animation_exists(const char* sprite_name, int anim_id);
+
+/* gets the required animation - crashes if not found */
+const struct animation_t* sprite_get_animation(const char* sprite_name, int anim_id);
 
 
 
 
+/*
+ * Sprite metadata
+ */
 
+/* creates a spriteinfo_t given a parse tree */
+spriteinfo_t* spriteinfo_create(const struct parsetree_program_t* tree);
 
+/* releases a spriteinfo_t */
+void spriteinfo_destroy(spriteinfo_t* info);
 
-/* === spriteinfo_t class: public methods === */
+/* get an animation frame of the sprite */
+const struct image_t* spriteinfo_get_animation_frame(const spriteinfo_t* info, int frame_index);
 
-/* creates an anonymous spriteinfo_t object by parsing the passed tree */
-spriteinfo_t *spriteinfo_create(const parsetree_program_t *tree);
+/* get an animation of the sprite */
+const struct animation_t* spriteinfo_get_animation(const spriteinfo_t* info, int anim_id);
 
-/* if you have called spriteinfo_create(), call this too when you're done with the sprite */
-void spriteinfo_destroy(spriteinfo_t *info);
+/* finds a transition animation in a sprite - returns NULL if there isn't any */
+const struct animation_t* spriteinfo_find_transition_animation(const spriteinfo_t* info, int from_id, int to_id);
+
+/* get a programmatic animation, or NULL if none is defined with the given name */
+const struct proganim_t* spriteinfo_get_proganim(const spriteinfo_t* info, const char* name);
+
+/* gets a NULL-terminated array with the element(s) of a user-defined custom property, or NULL if no property with the given name exists */
+const char* const* spriteinfo_user_property(const spriteinfo_t* info, const char* name);
+
+/* the source file (image) of the sprite */
+const char* spriteinfo_source_file(const spriteinfo_t* info);
+
+/* the source rect of the sprite */
+rect_t spriteinfo_source_rect(const spriteinfo_t* info);
+
+/* the width of a frame of the sprite */
+int spriteinfo_frame_width(const spriteinfo_t* info);
+
+/* the height of a frame of the sprite */
+int spriteinfo_frame_height(const spriteinfo_t* info);
+
+/* create a collision mask from a frame of the spritesheet */
+struct collisionmask_t* spriteinfo_to_collisionmask(const spriteinfo_t* info, int frame_index);
 
 #endif

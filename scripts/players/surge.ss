@@ -7,15 +7,18 @@
 using SurgeEngine.Player;
 using SurgeEngine.Actor;
 using SurgeEngine.Level;
+using SurgeEngine.Vector2;
 using SurgeEngine.Audio.Sound;
+using SurgeEngine.Collisions.Sensor;
 using SurgeEngine.Collisions.CollisionBall;
+using SurgeEngine.Behaviors.DirectionalMovement;
 
 //
 // Surge's waiting animation will be modified if he's underwater
 //
 object "Surge's Waiting Animation" is "companion"
 {
-    player = Player("Surge");
+    player = parent;
 
     state "main"
     {
@@ -25,115 +28,303 @@ object "Surge's Waiting Animation" is "companion"
 }
 
 //
-// Surge's sneakers won't be lit while he's midair
+// We modify Surge's animation:
+// 1. when he falls down after hitting a spring
+// 2. after breathing an air bubble
 //
-object "Surge's Light Sneakers" is "companion"
+object "Surge's Falling Animation" is "companion"
 {
-    player = Player("Surge");
+    player = parent;
+    falling = 32;
+    springing = 13;
 
     state "main"
     {
-        if(player.midair) {
-            if(player.walking)
-                setAnim(20, player.animation.speedFactor);
-            else if(player.running)
-                setAnim(21, player.animation.speedFactor);
-            else if(player.braking)
-                setAnim(22, player.animation.speedFactor);
-        }
+        // The player may be in the springing state,
+        // but that alone doesn't mean he has just
+        // been hit by a spring. We use the springing
+        // state to create other things, like the double
+        // jump, so we need to check player.anim as well.
+        // We also check if regular physics are enabled.
+        if(player.springing && player.anim == springing && !player.frozen)
+            state = "watching";
+
+        // From breathing to falling
+        else if(player.breathing)
+            state = "watching";
     }
 
-    fun setAnim(id, f)
+    state "watching"
     {
-        player.anim = id;
-        player.animation.speedFactor = f;
+        // Now the player is midair and will fall
+        // down. We'll capture this event and
+        // change the animation accordingly
+        if(player.ysp >= 0 && player.midair && (player.springing || player.walking)) {
+            player.anim = falling;
+            state = "falling";
+        }
+        else if(!player.springing && !player.breathing)
+            state = "main";
+    }
+
+    state "falling"
+    {
+        if(player.ysp >= 0 && player.midair)
+            player.anim = falling;
+        else
+            state = "main";
     }
 }
 
 //
-// Surge's Lighting Boom (double jump)
+// Surge's Shield Abilities performs an attack depending on the shield type
 //
-object "Surge's Lighting Boom" is "companion"
+object "Surge's Shield Abilities" is "companion"
 {
-    player = Player("Surge");
+    player = parent;
+    shieldAbilities = player.spawn("Shield Abilities").setup({
+        "thunder": "Surge's Lightning Smash"
+    });
+}
+
+//
+// Surge's Lightning Smash (thunder shield)
+//
+object "Surge's Lightning Smash" is "shield ability"
+{
+    player = null;
+    abilities = null;
+    sfx = Sound("samples/lightning_smash.wav");
+
+    state "main"
+    {
+    }
+
+    state "active"
+    {
+        // back to ball mode
+        player.anim = 41;
+        if(player.animation.finished)
+            state = "rolling";
+        if(player.underwater)
+            abilities.deactivate();
+    }
+
+    state "rolling"
+    {
+        player.roll();
+        if(player.underwater)
+            abilities.deactivate();
+    }
+
+    fun onActivate(shieldAbilities)
+    {
+        // get the player
+        player = shieldAbilities.player;
+
+        // smash!
+        player.ysp = Math.max(player.ysp, 480);
+
+        // create neat sparks
+        for(n = 8, i = 0; i < n; i++) {
+            Level.spawnEntity("Surge's Lightning Spark", player.collider.center)
+                 .setDirection(Vector2.up)
+                 .setId(i, n);
+        }
+        sfx.play();
+
+        // save the shieldAbilities object
+        abilities = shieldAbilities;
+
+        // done
+        state = "active";
+    }
+
+    fun onDeactivate(shieldAbilities)
+    {
+        state = "main";
+    }
+}
+
+//
+// Surge's Lightning Boom (double jump)
+//
+object "Surge's Lightning Boom" is "companion"
+{
+    player = parent;
     normalJumpSpeed = -240; // pixels per second
     superJumpSpeed = -330; // if thunder shield
     timeMidAir = 0;
     xsp = 0;
     fx = null;
+    shieldAbilities = null;
+    ceilingSensor = Sensor(-player.collider.width * 0.35, -player.collider.height * 0.75, player.collider.width * 0.7, 1);
 
     state "main"
     {
+        // find the Shield Abilities object
+        shieldAbilities = player.findObject("Shield Abilities") || 
+                          player.spawn("Shield Abilities").setup({ });
+
+        // done
+        state = "watching";
+    }
+
+    state "watching"
+    {
         timeMidAir += (player.midair ? Time.delta : -timeMidAir);
         if(timeMidAir >= 0.1 && !player.underwater) {
-            if(isReady(player) && player.input.buttonPressed("fire1")) {
-                player.hlock(0.5);
-                player.ysp = jumpSpeed(player);
-                xsp = player.xsp;
-                fx = spawn("Surge's Lighting Boom FX");
-                state = "attacking";
+            if(player.input.buttonPressed("fire1") && isReady()) {
+                boom();
+                shieldAbilities.unlock();
+                shieldAbilities.getReadyToActivate();
+                return;
             }
         }
+
+        if(!player.underwater)
+            shieldAbilities.lock();
+        else
+            shieldAbilities.unlock();
     }
 
     state "attacking"
     {
         player.anim = 39;
         player.xsp = xsp;
-        if(!player.midair) {
+
+        if(mustStop()) {
             if(player.angle != 0)
                 player.anim = 1;
-            state = "main";
+            backToNormal();
         }
-        else if(player.animation.finished)
+        else if(player.animation.finished) {
+            player.springify(); // adjust sensors
             state = "sustaining";
+        }
+        else if(shieldAbilities.active) {
+            state = "waiting for shield attack";
+        }
+        else if(mustAdjustToCeiling())
+            adjustToCeiling();
     }
 
     state "sustaining"
     {
         player.anim = 40;
-        if(player.ysp >= 120) {
-            player.springify();
-            state = "main";
-        }
-        else if(!player.midair) {
+
+        if(mustStop()) {
             if(player.angle != 0)
                 player.anim = 1;
-            state = "main";
+            backToNormal();
+        }
+        else if(shieldAbilities.active) {
+            state = "waiting for shield attack";
+        }
+        else if(player.ysp >= 120) {
+            backToNormal();
+        }
+        else if(mustAdjustToCeiling())
+            adjustToCeiling();
+    }
+
+    state "waiting for shield attack"
+    {
+        if(!shieldAbilities.active)
+            backToNormal();
+    }
+
+    fun boom()
+    {
+        player.hlock(0.5);
+        player.ysp = jumpSpeed();
+        player.aggressive = true;
+        if(player.rolling)
+            player.springify(); // adjust sensors
+        xsp = player.xsp;
+        fx = spawn("Surge's Lightning Boom FX").setPlayer(player);
+        state = "attacking";
+    }
+
+    fun backToNormal()
+    {
+        if(state != "watching") {
+            player.aggressive = false;
+            state = "watching";
         }
     }
 
-    fun isReady(player)
+    fun isReady()
     {
-        return player.midair && (player.jumping || player.rolling || player.springing);
+        return player.midair && !shieldAbilities.active &&
+               (player.jumping || player.rolling || player.springing);
     }
 
-    fun jumpSpeed(player)
+    fun mustStop()
+    {
+        return !player.midair || player.underwater ||
+               player.hit || player.dying || player.frozen;
+    }
+
+    fun jumpSpeed()
     {
         jmp = (player.shield == "thunder") ? superJumpSpeed : normalJumpSpeed;
         return Math.min(player.ysp, jmp);
     }
+
+    fun mustAdjustToCeiling()
+    {
+        ceilingSensor.layer = player.layer;
+        return ceilingSensor.status == "solid";
+    }
+
+    fun adjustToCeiling()
+    {
+        player.ysp = Math.max(player.ysp, 0);
+        for(maxAttempts = 64, i = 0; ceilingSensor.status == "solid" && i < maxAttempts; i++) {
+            player.transform.translateBy(0, 1);
+            ceilingSensor.onTransformChange();
+        }
+    }
 }
 
-// Lighting Boom Effect
-object "Surge's Lighting Boom FX" is "private", "entity"
+//
+// Special effects
+//
+
+// Lightning Boom Effect
+object "Surge's Lightning Boom FX" is "private", "entity"
 {
-    actor = Actor("Surge's Lighting Boom");
-    sfx = Sound("samples/lighting_boom.wav");
+    actor = Actor("Surge's Lightning Boom");
+    sfx = Sound("samples/lightning_boom.wav");
     collider = CollisionBall(40);
-    player = Player("Surge");
+    player = null;
     minRadius = 0;
     maxRadius = 0;
     time = 0;
+    sparks = [];
 
     state "main"
     {
+        stronger = (player.shield == "thunder");
+
         // initializing
         minRadius = collider.radius;
-        maxRadius = actor.width * 0.6;
+        maxRadius = actor.width * (stronger ? 0.6 : 0.4);
         //collider.visible = true;
-        actor.zindex = 0.50005;
         sfx.play();
+
+        // add sparks
+        for(n = 16, i = 0; i < n; i++) {
+            spark = spawn("Surge's Lightning Spark")
+                   .setSpeed(stronger ? 240 : 180)
+                   .setId(i, n);
+            sparks.push(spark);
+        }
+
+        // configure the actor
+        actor.visible = stronger;
+        actor.zindex = 0.50005;
 
         // done
         state = "expanding";
@@ -147,7 +338,7 @@ object "Surge's Lighting Boom FX" is "private", "entity"
         collider.radius = Math.lerp(minRadius, maxRadius, time / timeToLive);
 
         // destroy the object
-        if(actor.animation.finished)
+        if(time >= timeToLive)
             destroy();
     }
 
@@ -155,8 +346,67 @@ object "Surge's Lighting Boom FX" is "private", "entity"
     {
         // destroy enemies on touch
         if(otherCollider.entity.__name == "Enemy") {
-            enemy = otherCollider.entity;
-            enemy.kill(player);
+            if(player.ysp <= 0) { // player going up?
+                enemy = otherCollider.entity;
+                if(enemy.enabled)
+                    enemy.kill(player);
+            }
         }
+    }
+
+    fun setPlayer(p)
+    {
+        player = p;
+        return this;
+    }
+}
+
+// Lightning Spark
+object "Surge's Lightning Spark" is "private", "disposable", "entity"
+{
+    actor = Actor("Surge's Lightning Spark");
+    movement = DirectionalMovement();
+    id = 0;
+    count = 0;
+    speed = 180;
+    baseAngle = null;
+
+    state "main"
+    {
+        // initializing
+        actor.zindex = 0.50005;
+        movement.speed = speed;
+        if(baseAngle === null)
+            movement.angle = 360 * id / count; // all directions
+        else
+            movement.angle = 180 * id / (count - 1) + (baseAngle - 90); // specific direction
+
+        // done
+        state = "moving";
+    }
+
+    state "moving"
+    {
+        if(actor.animation.finished)
+            destroy();
+    }
+
+    fun setId(sparkId, sparkCount)
+    {
+        count = Math.max(2, sparkCount);
+        id = Math.clamp(sparkId, 0, count - 1);
+        return this;
+    }
+
+    fun setDirection(direction)
+    {
+        baseAngle = direction !== null ? direction.angle : null;
+        return this;
+    }
+
+    fun setSpeed(spd)
+    {
+        speed = spd;
+        return this;
     }
 }

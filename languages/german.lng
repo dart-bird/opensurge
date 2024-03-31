@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------------
 // File: languages/german.lng
-// Description: German translation (encoding: utf-8)
+// Description: German translation (encoding: UTF-8)
 // Author: Wuzzy
 // License: MIT
 // -----------------------------------------------------------------------------
@@ -11,20 +11,20 @@
 //
 
 // Translation metadata
+// (use the English alphabet)
 LANG_ID                     "de_DE"                   // language code & country according to ISO 639-1 & ISO 3166-1, respectively
 LANG_NAME                   "Deutsch"                 // language name
 LANG_AUTHOR                 "Wuzzy"                   // translation author
-LANG_LASTUPDATE             "2019-11-16"              // date format: yyyy-mm-dd
-LANG_COMPATIBILITY          "0.5.0"                   // required engine version
+LANG_LASTUPDATE             "2024-03-12"              // date format: yyyy-mm-dd
+LANG_COMPATIBILITY          "0.6.1"                   // required engine version
 
-// Colors
-COLOR_TITLE                 "ff8800"
-COLOR_HIGHLIGHT             "ffee11"
-COLOR_HUD                   "ffff00"
-COLOR_HUDDANGER             "ff0000"
+
 
 //
-// Note to translators:
+// Translators:
+//
+// Before starting your work, please check out the
+// Translation Guide at http://wiki.opensurge2d.org
 //
 // You don't need to translate everything exactly "as is".
 // You may use some "cool" slang that kids use, provided
@@ -32,8 +32,27 @@ COLOR_HUDDANGER             "ff0000"
 // you're translating is preserved!
 //
 // After translating, please make sure you test everything.
-// In the options screen, highlight "Stage select", press
-// right 3 times and enter. You'll see all .lev files.
+// All texts should fit within their graphical boundaries.
+// To help you with the testing, use the developer mode.
+//
+// Developer mode: when seeing the Open Surge Engine splash
+// screen, press RIGHT 3 times and enter. You'll see a list
+// of all level files.
+//
+
+//
+// Updating translations:
+//
+// New strings get added from time to time. They are marked
+// as FIXME. To find them, use the Find tool in your editor.
+// Found something? Please search for it now.
+//
+// If you find that mark anywhere in the file, it means that
+// the translation needs to be updated. Please submit a patch
+// to keep it up to date.
+//
+// After translating the new strings, make sure to remove
+// that mark.
 //
 
 
@@ -43,75 +62,159 @@ COLOR_HUDDANGER             "ff0000"
 //
 
 // Options
-OPTIONS_TITLE               "<color=$COLOR_TITLE>EINSTELLUNGEN</color>"
-OPTIONS_YES                 "JA"
-OPTIONS_NO                  "NEIN"
-OPTIONS_GRAPHICS            "GRAFIK"
+OPTIONS_TITLE               "EINSTELLUNGEN"
+OPTIONS_GRAPHICS            "Grafik"
+OPTIONS_CONTROLS            "Steuerung"
+OPTIONS_GAME                "Spiel"
+OPTIONS_ENGINE              "Engine"
+OPTIONS_MODS                "Mods"
+OPTIONS_AUDIO               "Audio"
+OPTIONS_BACK                "Zurück"
+OPTIONS_YES                 "Ja"
+OPTIONS_NO                  "Nein"
+OPTIONS_ON                  "Ein" // alternatively: Enabled
+OPTIONS_OFF                 "Aus" // alternatively: Disabled
 OPTIONS_FULLSCREEN          "Vollbild"
 OPTIONS_RESOLUTION          "Bildschirmgröße"
-OPTIONS_RESOLUTION_OPT1     "1×"
-OPTIONS_RESOLUTION_OPT2     "2×"
-OPTIONS_RESOLUTION_OPT3     "3×"
-OPTIONS_RESOLUTION_OPT4     "4×"
-OPTIONS_SMOOTHGFX           "Weiche Grafik"
-OPTIONS_SMOOTHGFX_ERROR     "[nur 32 bpp]"
+OPTIONS_QUALITY             "Qualität"
+OPTIONS_QUALITY_LOW         "Niedrig"
+OPTIONS_QUALITY_MEDIUM      "Mittel"
+OPTIONS_QUALITY_HIGH        "Hoch"
 OPTIONS_FPS                 "FPS anzeigen"
-OPTIONS_GAME                "SPIEL"
+OPTIONS_VSYNC               "V-Sync" // meaning: vertical synchronization
+OPTIONS_PIXELSCALER         "Pixelskalierer"
+OPTIONS_COMINGSOON          "Kommt bald!"
+OPTIONS_VOLUME              "Lautstärke"
+OPTIONS_MUTE                "Stumm"
+OPTIONS_GAMEPADOPACITY      "Undurchsichtigkeit"
 OPTIONS_GAMEPAD             "Gamepad benutzen"
-OPTIONS_LANGUAGE            "Sprache wechseln"
+OPTIONS_LANGUAGE            "Sprache"
 OPTIONS_STAGESELECT         "Level auswählen"
+OPTIONS_DEVELOPERMODE       "Entwicklermodus"
 OPTIONS_CREDITS             "Mitwirkende von Open Surge"
+OPTIONS_WEBSITE             "Besuch Open Surge im Web"
 OPTIONS_DONATE              "An Open Surge spenden"
-OPTIONS_BACK                "ZURÜCK"
+OPTIONS_ABOUT               "Über die Engine"
+OPTIONS_SHARE               "Die Engine teilen"
+OPTIONS_DOWNLOAD_DESKTOP    "Hol dir die Engine für Desktop"
+OPTIONS_DOWNLOAD_MOBILE     "Hol dir die Engine für mobile Geräte"
+OPTIONS_PLAYMOD             "Ein Spiel spielen"
+OPTIONS_PLAYMOD_NOTAGAME    "Der ausgewählte Eintrag ist kein Open-Surge-Spiel!"
+OPTIONS_PLAYMOD_LEGACYERROR "Veraltete Open-Surge-Spiele werden nicht unterstützt."
+OPTIONS_PLAYMOD_COMPATWARN  "Der Kompatibilitätsmodus ist eine Funktion, um dein Spielerlebnis zu verbessern. Bist du dir sicher, dass du ihn deaktivieren willst?"
+OPTIONS_MODSTORAGE          "Speicher"
+OPTIONS_MODSTORAGE_FOLDER   "Verzeichnis" // alternatively: Directory
+OPTIONS_MODSTORAGE_ARCHIVE  ".zip-Archiv"
+OPTIONS_COMPATIBILITYMODE   "Kompatibilitätsmodus"
+OPTIONS_SUBMITFEEDBACK      "Feedback geben"
+OPTIONS_WRITEREVIEW         "Eine Rezension schreiben"
+OPTIONS_RATEAPP             "Die App bewerten"
+OPTIONS_REPORTISSUE         "Ein Problem melden"
+OPTIONS_BACKTOBASEGAME      "Zurück zum Basisspiel"
 
 // Stage Select
-STAGESELECT_TITLE           "<color=$COLOR_TITLE>LEVELWAHL</color>"
-STAGESELECT_DEBUG           "<color=$COLOR_TITLE>DEBUG-MODUS</color>"
+STAGESELECT_TITLE           "LEVELWAHL"
+STAGESELECT_DEBUG           "ENTWICKLERMODUS"
 STAGESELECT_MSG             "<color=$COLOR_HIGHLIGHT>$INPUT_FIRE4</color> drücken, um zurückzukehren"
 STAGESELECT_PAGE            "Seite $1/$2"
 STAGESELECT_ACT             "Zone"
 
-// Quest Select
-QUESTSELECT_TITLE           "<color=$COLOR_TITLE>MISSIONSWAHL</color>"
-QUESTSELECT_MSG             "<color=$COLOR_HIGHLIGHT>$INPUT_FIRE4</color> drücken, um zurückzukehren"
-QUESTSELECT_PAGE            "Seite $1/$2"
-QUESTSELECT_INFO            "<color=$COLOR_HIGHLIGHT>Version:</color> $1\n<color=$COLOR_HIGHLIGHT>Autor:</color> $2\n<color=$COLOR_HIGHLIGHT>Beschreibung:</color> $3"
-
 // Credits
-CREDITS_TITLE               "<color=$COLOR_TITLE>MITWIRKENDE</color>"
+CREDITS_TITLE               "MITWIRKENDE"
 CREDITS_BACK                "<color=$COLOR_HIGHLIGHT>$INPUT_FIRE4</color> drücken, um zurückzukehren"
-CREDITS_HEADER              "<color=$COLOR_HIGHLIGHT>$GAME_NAME Version $GAME_VERSION</color>\nbasierend auf $ENGINE_NAME\n$ENGINE_WEBSITE"
+CREDITS_HEADER              "<color=$COLOR_HIGHLIGHT>$ENGINE_NAME Version $ENGINE_VERSION</color>\nbasierend auf $ENGINE_NAME\n$ENGINE_WEBSITE"
 CREDITS_ACTIVE              "<color=$COLOR_HIGHLIGHT>Leute</color>"
+CREDITS_RETIRED             "<color=$COLOR_HIGHLIGHT>Ex-Mitglieder</color>"
 CREDITS_THANKS              "<color=$COLOR_HIGHLIGHT>Dank an</color>"
-CREDITS_ALEXANDRE           "Projektleiter und -gründer\nProjektentwickler"
-CREDITS_JOAO                "Künstler"
+CREDITS_ALEXANDRE           "Projektleiter u. Gründer\nProjektentwickler\nKünstler"
+CREDITS_JOAO                "Künstler\nZeichner"
 CREDITS_MATEUS              "Toneffekte"
-CREDITS_CODY                "Concept-Art"
+CREDITS_CODY                "Concept-Artist\nGegner-Designer"
 CREDITS_JOHAN               "Musiker (Ruhe in Frieden, Freund)"
 CREDITS_DI                  "Musiker"
 CREDITS_VICTOR              "Musiker"
+CREDITS_M374LX              "Musiker"
 CREDITS_COLIN               "Sprites, erste Geschichte"
 CREDITS_BRIAN               "Sprite-Autor"
 CREDITS_TRANSLATOR          "Übersetzer"
+CREDITS_TRANSLATORS         "<color=$COLOR_HIGHLIGHT>Übersetzer</color>"
+CREDITS_PASTTRANSLATORS     "<color=$COLOR_HIGHLIGHT>Ex-Übersetzer</color>"
 CREDITS_RES_TITLE           "<color=$COLOR_HIGHLIGHT>Mitwirkende der einzelnen Mediendaten</color>"
-CREDITS_RES_TEXT            "Wenn nicht anders vermerkt, sind die folgenden Dateien unter der Creative Commons Attribution 3.0 (CC-BY 3.0) lizensiert."
+CREDITS_RES_TEXT            "Die unten aufgelisteten Dateien sind unter freien Lizenzen gestellt. Ihre jeweiligen Autoren sind hier aufgeführt:"
 CREDITS_RES_IMAGES          "<color=$COLOR_HIGHLIGHT>Bilder</color>"
 CREDITS_RES_MUSICS          "<color=$COLOR_HIGHLIGHT>Musik</color>"
 CREDITS_RES_SAMPLES         "<color=$COLOR_HIGHLIGHT>Toneffekte</color>"
+CREDITS_RES_FONTS           "<color=$COLOR_HIGHLIGHT>Schriften</color>"
+CREDITS_RES_LEVELS          "<color=$COLOR_HIGHLIGHT>Levels</color>"
+CREDITS_RES_TRANSLATIONS    "<color=$COLOR_HIGHLIGHT>Übersetzungen</color>"
 CREDITS_RES_SCRIPTS         "<color=$COLOR_HIGHLIGHT>Skripte</color>"
 CREDITS_RES_SCRIPTS_TEXT    "Die Autoren werden in den Skripten selbst genannt."
 
-// Main Menu
-MAINMENU_DEVBUILD           "Entwicklungsversion"
-MAINMENU_VERSION            "v." // abbreviated
+// Title Screen
+TITLESCREEN_PLAY            "SPIEL STARTEN"
+TITLESCREEN_OPTIONS         "OPTIONEN"
+TITLESCREEN_MOBILE          "MOBIL SPIELEN"
+TITLESCREEN_SHARE           "TEILEN"
+TITLESCREEN_DONATE          "SPENDEN"
+TITLESCREEN_QUIT            "VERLASSEN"
+TITLESCREEN_SUBMITFEEDBACK  "FEEDBACK GEBEN"
+TITLESCREEN_WRITEREVIEW     "REZENSION SCHREIBEN"
+TITLESCREEN_RATEAPP         "APP BEWERTEN"
+TITLESCREEN_REPORTISSUE     "PROBLEM MELDEN"
+TITLESCREEN_VERSION         "SurgeEngine\n$ENGINE_VERSION" // bitmap font: no special characters are allowed
+TITLESCREEN_WEBSITE         "$ENGINE_WEBSITE" // bitmap font: no special characters are allowed
 
-// Create Menu
+// End of Demo
+ENDOFDEMO_CONTINUE          "WEITER"
+ENDOFDEMO_VERSION           "DEMO $GAME_VERSION\n"
+ENDOFDEMO_TEXT              "Danke fürs Spielen! Surge the Rabbit ist in Entwicklung.\n\nBesuche <color=$COLOR_HIGHLIGHT>$ENGINE_WEBSITE</color> für Updates!\n\nNun werden wir sehen, wie auch du deine eigenen Spiele machen kannst!"
+
+// Rate the Game
+// Tip: the rating scene isn't displayed often, so delete file surge.prefs or uncomment ratingTime.forget() at scripts/setup/scenes/rate_game.ss to test it (levels/scenes/rate_game.lev)
+RATEGAME_TITLE              "Surge the Rabbit bewerten?"
+RATEGAME_MESSAGE            "Wir möchten von dir hören!\nDein Feedback wird diesem Open-Source-Spiel und der -Engine helfen!"
+RATEGAME_YES                "Sicher!"
+RATEGAME_NO                 "Jetzt nicht"
+
+// Play classic levels
+PLAYCLASSICLEVELS_TEXT      "Die klassischen Levels spielen?"
+PLAYCLASSICLEVELS_YES       "$OPTIONS_YES"
+PLAYCLASSICLEVELS_NO        "$OPTIONS_NO"
+
+// Thanks for playing
+THANKSFORPLAYING_TITLE      "Danke fürs Spielen!"
+THANKSFORPLAYING_PARAGRAPH1 "Unterstütze diese unabhängige Arbeit! Hol dir die offizielle Edition der Engine für mobile Geräte!"
+THANKSFORPLAYING_PARAGRAPH2 "Spiele Surge the Rabbit - und auch deine eigenen Spiele - auf deinem Smartphone und Tablet!"
+THANKSFORPLAYING_PARAGRAPH3 "Werde heute zum Unterstützer dieser Open-Source-Spielengine!"
+THANKSFORPLAYING_YES        "Sicher!"
+THANKSFORPLAYING_NO         "Jetzt nicht"
+
+// (legacy) Main Menu
+MAINMENU_TITLE              "MENÜ"
+MAINMENU_PLAY               "SPIELEN"
+MAINMENU_CREATE             "ERSTELLEN"
+MAINMENU_SHARE              "TEILEN"
+MAINMENU_OPTIONS            "EINSTELLUNGEN"
+MAINMENU_QUIT               "ENDE"
+MAINMENU_DEVBUILD           "Entwicklungsversion"
+MAINMENU_VERSION            "v. $ENGINE_VERSION" // abbreviated
+
+// (legacy) Create Menu
 // Note: when translating CREATEMENU_TEXT, make sure the text fits the screen! (6 lines max)
+CREATEMENU_TITLE            "ERSTELLEN"
+CREATEMENU_PLAY             "DEMO SPIELEN"
+CREATEMENU_LEARN            "LERNEN"
+CREATEMENU_SCRIPTING        "SURGESCRIPT"
+CREATEMENU_BACK             "ZURÜCK"
 CREATEMENU_TEXT             "Open Surge lässt dich deine eigenen großartigen Spiele erstellen. Lass deiner Kreativität freien Lauf!\nStarte dein eigenes Projekt! Erstelle neue Levels, Dinge, Besonderheiten, Figuren und mehr! Lern den Level-Editor kennen, lern die Engine und tauch in SurgeScript ein, um tolle Sachen zu machen!"
 
-// Congratulations Screen
+// (legacy) Congratulations Screen
 // Note: when translating CONGRATULATIONS_TEXT, make sure the text fits the screen! (6 lines max)
-CONGRATULATIONS_TEXT        "Danke, dass du Open Surge Version $GAME_VERSION spielst. Willst du mehr spielen? Besuche $GAME_WEBSITE für Updates! Open Surge lässt dich deine eigenen Spiele spielen und erstellen. Es wird für Leute wie dich entwickelt. Und jetzt verbreite den Spaß! Erzähl deiner Famile, Freunden und Haustieren davon!"
+CONGRATULATIONS_TITLE       "DANKE FÜRS SPIELEN"
+CONGRATULATIONS_SHARE       "TEILEN"
+CONGRATULATIONS_DONATE      "SPENDEN"
+CONGRATULATIONS_BACK        "ZURÜCK"
+CONGRATULATIONS_TEXT        "Danke, dass du Open Surge Version $ENGINE_VERSION spielst. Willst du mehr spielen? Besuche $ENGINE_WEBSITE für Updates! Open Surge lässt dich deine eigenen Spiele spielen und erstellen. Es wird für Leute wie dich entwickelt. Und jetzt verbreite den Spaß! Erzähl deiner Famile, Freunden und Haustieren davon!"
 
 
 
@@ -129,10 +232,10 @@ INPUT_KEYB_FIRE1            "LEERTASTE"
 INPUT_KEYB_FIRE2            "STRG LINKS"
 INPUT_KEYB_FIRE3            "ENTER"
 INPUT_KEYB_FIRE4            "ESC"
-INPUT_KEYB_FIRE5            "W"
-INPUT_KEYB_FIRE6            "A"
-INPUT_KEYB_FIRE7            "S"
-INPUT_KEYB_FIRE8            "D"
+INPUT_KEYB_FIRE5            "UMSCHALT LINKS"
+INPUT_KEYB_FIRE6            "UMSCHALT RECHTS"
+INPUT_KEYB_FIRE7            "<verfügbar>"
+INPUT_KEYB_FIRE8            "<verfügbar>"
 
 // joystick
 INPUT_JOY_DIRECTIONAL       "die RICHTUNGSTASTEN"
@@ -140,14 +243,14 @@ INPUT_JOY_LEFT              "der LINKS-BUTTON"
 INPUT_JOY_RIGHT             "der RECHTS-BUTTON"
 INPUT_JOY_UP                "der HOCH-BUTTON"
 INPUT_JOY_DOWN              "der RUNTER-BUTTON"
-INPUT_JOY_FIRE1             "BUTTON 1"
-INPUT_JOY_FIRE2             "BUTTON 2"
-INPUT_JOY_FIRE3             "BUTTON 3"
-INPUT_JOY_FIRE4             "BUTTON 4"
-INPUT_JOY_FIRE5             "BUTTON 5"
-INPUT_JOY_FIRE6             "BUTTON 6"
-INPUT_JOY_FIRE7             "BUTTON 7"
-INPUT_JOY_FIRE8             "BUTTON 8"
+INPUT_JOY_FIRE1             "der AKTIONS-BUTTON"
+INPUT_JOY_FIRE2             "der SEKUNDÄRE AKTIONS-BUTTON"
+INPUT_JOY_FIRE3             "PAUSE"
+INPUT_JOY_FIRE4             "ZURÜCK"
+INPUT_JOY_FIRE5             "L1"
+INPUT_JOY_FIRE6             "R1"
+INPUT_JOY_FIRE7             "<verfügbar>"
+INPUT_JOY_FIRE8             "<verfügbar>"
 
 
 
@@ -160,18 +263,121 @@ QUIT_QUESTION               "WILLST DU WIRKLICH GEHEN?"
 QUIT_OPTION1                "JA"
 QUIT_OPTION2                "NEIN"
 
-	
+// Loading Screen
+LOADING_TEXT                "Laden ..."
+
+
 
 //
 // Section: levels
 //
 
 // Demo Level
-LEV_DEMO_1                  "Willkommen im <color=$COLOR_HIGHLIGHT>Demo-Level</color>! Benutze $INPUT_DIRECTIONAL zum Bewegen, $INPUT_FIRE1 zum Springen, $INPUT_FIRE2 zum Figurenwechsel."
+LEV_DEMO_1                  "<color=$COLOR_TITLE>Erstelle deine eigenen tollen Spiele!</color>\nDieses Spiel wurde mit <color=$COLOR_HIGHLIGHT>Open Surge</color> erstellt, einer sehr flexiblen Open-Source-2-D-Spielengine, die sich jetzt in deinen Händen befindet!"
 LEV_DEMO_2                  "<color=$COLOR_TITLE>Schon gewusst?</color> Alles in Open Surge kann angepasst werden. Du kannst Levels, Dinge, Bosse, Figuren und mehr erstellen. Es ist ein vollwertiges <color=$COLOR_HIGHLIGHT>Spielerstellungssystem</color>."
 LEV_DEMO_3                  "Eines der Hauptfunktionen in Open Surge ist <color=$COLOR_HIGHLIGHT>SurgeScript</color>. Das ist eine Skriptsprache für Spiele. Benutze sie, um alles, was du dir nur vorstellen kannst, zu bauen!"
-LEV_DEMO_4                  "<color=$COLOR_TITLE>Cool!</color>\nIst das nicht toll? Es gibt keine Grenzen! Besuch <color=$COLOR_HIGHLIGHT>$GAME_WEBSITE</color>, um noch heute deine großartigen Spiele zu machen!"
+LEV_DEMO_4                  "<color=$COLOR_TITLE>Cool!</color>\nIst das nicht toll? Es gibt keine Grenzen! Besuch <color=$COLOR_HIGHLIGHT>$ENGINE_WEBSITE</color>, um noch heute deine großartigen Spiele zu machen!"
 LEV_DEMO_5                  "<color=$COLOR_TITLE>Versuch es selbst!</color> Jetzt bist du an der Reihe! <color=$COLOR_HIGHLIGHT>Drück F12, um den Editor zu öffnen</color>. Öffne als nächstes die Palette und fang an, dein Level zu bauen! (Drück F1 für Hilfe.)"
+LEV_DEMO_5_MOBILE           "<color=$COLOR_TITLE>Versuch es selbst!</color>\nJetzt bist du an der Reihe! Pausiere das Spiel, ziehe den Griff unten am Bildschirm und starte den <color=$COLOR_HIGHLIGHT>ENTWICKLERMODUS</color>, um <color=$COLOR_HIGHLIGHT>das Level zu bearbeiten</color>!"
+
+
+//
+// Section: level editor
+//
+
+// Main UI
+EDITOR_UI_HELP              "<color=$COLOR_EDITOR_HIGHLIGHT>F1</color>: Hilfe"
+EDITOR_UI_TOOL              "<color=$COLOR_EDITOR_HIGHLIGHT>$1</color> $2"
+EDITOR_UI_BRICK             "Ziegel"
+EDITOR_UI_GROUP             "Gruppe"
+EDITOR_UI_ENTITY            "Entity"
+EDITOR_UI_LEGACYITEM        "Legacy-Item"
+EDITOR_UI_LEGACYOBJECT      "Legacy-Objekt"
+EDITOR_UI_MISSING           "<fehlend>"
+
+// Bricks - scenery elements
+// Translators: please keep the names below succint. See the comments for their meaning.
+EDITOR_BRICK_TYPE_SOLID     "FEST"     // a solid brick (you can't get inside them)
+EDITOR_BRICK_TYPE_CLOUD     "WOLKE"     // "jump-through" platforms (you can step on top of them)
+EDITOR_BRICK_TYPE_PASSABLE  "PASSIERBAR"  // a brick with no effect on collisions (decorative elements)
+EDITOR_BRICK_TYPE_UNKNOWN   "UNBEKANNT"
+
+EDITOR_BRICK_BEHAVIOR_DEFAULT    "STANDARD"   // a brick that stands still
+EDITOR_BRICK_BEHAVIOR_CIRCULAR   "KREISEND"  // circular motion / elliptic orbit
+EDITOR_BRICK_BEHAVIOR_PENDULAR   "PENDELND"  // a brick with pendular motion
+EDITOR_BRICK_BEHAVIOR_BREAKABLE  "BRÜCHIG" // breakable when rolling and colliding with it
+EDITOR_BRICK_BEHAVIOR_SMASHABLE  "ZERSCHMETTERBAR" // will break when the player jumps on top of it
+EDITOR_BRICK_BEHAVIOR_FALL       "FALLEND"      // falls as soon as the player steps on it
+EDITOR_BRICK_BEHAVIOR_FLOAT      "SCHWEBEND"     // a floating platform
+EDITOR_BRICK_BEHAVIOR_MARKER     "MARKIERUNG"    // special brick only rendered in the editor
+EDITOR_BRICK_BEHAVIOR_UNKNOWN    "UNBEKANNT"
+
+EDITOR_BRICK_FLIP_NOFLIP    "ungespiegelt"            // the brick is not flipped (this is the default)
+EDITOR_BRICK_FLIP_HFLIP     "horizontal gespiegelt" // flip horizontally
+EDITOR_BRICK_FLIP_VFLIP     "vertikal gespiegelt"   // flip vertically
+EDITOR_BRICK_FLIP_VHFLIP    "um 180° rotiert"      // flip horizontally & vertically
+
+// Palette
+EDITOR_PALETTE_BRICK        "Ziegel"
+EDITOR_PALETTE_MISSING      "fehlend"
+EDITOR_PALETTE_EMPTY        "Keine Items gefunden. Drücke <color=$COLOR_EDITOR_HIGHLIGHT>$EDITOR_INPUT_ESC</color>, um zurückzukehren."
+
+// Help screen
+EDITOR_HELP_GENERAL         "<color=$COLOR_EDITOR_HIGHLIGHT>Allgemein</color>"
+EDITOR_HELP_ITEMS           "<color=$COLOR_EDITOR_HIGHLIGHT>Item-Platzierung</color>"
+EDITOR_HELP_LAYERS          "<color=$COLOR_EDITOR_HIGHLIGHT>Ebenensystem</color>"
+EDITOR_HELP_BACK            "Drücke <color=$COLOR_EDITOR_HIGHLIGHT>$EDITOR_INPUT_ESC</color>, um zurückzukehren."
+EDITOR_HELP_TINYWINDOW      "Nicht genug Platz für die Anzeige der Befehlsreferenz. Bitte vergrößere das Fenster im dem Einstellungsbildschirm.\n\n Drücke <color=$COLOR_EDIT_OR_HIGHLIGHT>$EDITOR_INPUT_ESC</color>, um zurückzukehren."
+EDITOR_HELP_LAYERSTUTORIAL  "Der Spieler wird die Ebenen wechseln, indem er die grünen/gelben L-Objekte berührt (siehe Palette)\nDas grüne L-Objekt aktiviert die grüne Ebene und deaktiviert die gelbe Ebene\nDas gelbe L-Objekt aktiviert die gelbe Ebene und deaktiviert die grüne Ebene\nDrück die L-Taste, um die Ebene zu wechseln, in der du die Ziegel platzierst\nDie grüne Ebene erscheint vor der gelben Ebene"
+
+EDITOR_HELP_CMD_RETURN      "Zum Spiel zurückkehren"
+EDITOR_HELP_CMD_PALETTE     "Item-Palette öffnen"
+EDITOR_HELP_CMD_SAVE        "Das Level speichern"
+EDITOR_HELP_CMD_RELOAD      "Level neu laden"
+EDITOR_HELP_CMD_MOVE        "Kamera bewegen"
+EDITOR_HELP_CMD_MOVEFASTER  "Kamera bewegen (schneller)"
+EDITOR_HELP_CMD_UNDO        "Rückgängig"
+EDITOR_HELP_CMD_REDO        "Wiederholen"
+EDITOR_HELP_CMD_HELP        "Hilfe zeigen"
+EDITOR_HELP_CMD_GRID        "In Raster einrasten"
+EDITOR_HELP_CMD_MASKS       "Kollisionsmarker zeigen"
+EDITOR_HELP_CMD_PUTITEM     "Item platzieren"
+EDITOR_HELP_CMD_PICKITEM    "Item aufnehmen"
+EDITOR_HELP_CMD_DELETEITEM  "Item löschen (halten: Radierer)"
+EDITOR_HELP_CMD_CHANGEITEM  "Item wechseln"
+EDITOR_HELP_CMD_CHANGETYPE  "Itemtyp wechseln"
+EDITOR_HELP_CMD_WATERLEVEL  "Wasserhöhe ändern"
+EDITOR_HELP_CMD_SPAWNPOINT  "Den Spawn-Punkt ändern"
+EDITOR_HELP_CMD_BRICKLAYER  "Die Ziegelebene ändern"
+EDITOR_HELP_CMD_FLIPBRICK   "Den aktuellen Ziegel spiegeln"
+
+// Input keys
+EDITOR_INPUT_ARROWS         "Pfeiltasten"
+EDITOR_INPUT_SHIFT          "Umschalt" // Shift key
+EDITOR_INPUT_CTRL           "Strg"  // Ctrl key
+EDITOR_INPUT_ESC            "Esc"   // ESC key
+EDITOR_INPUT_LEFTCLICK      "Linke Maustaste"
+EDITOR_INPUT_RIGHTCLICK     "Rechte Maustaste"
+EDITOR_INPUT_MIDDLECLICK    "Mittlere Maustaste"
+EDITOR_INPUT_MOUSEWHEEL     "Mausrad"
+
+// Confirm boxes
+EDITOR_CONFIRM_RELOAD       "Level neu laden?"
+EDITOR_CONFIRM_YES          "Ja"
+EDITOR_CONFIRM_NO           "Nein"
+
+// Messages
+EDITOR_MESSAGE_WELCOME      "Willkommen im Level-Editor!"
+EDITOR_MESSAGE_SAVED        "Gespeichert zu <color=$COLOR_EDITOR_HIGHLIGHT>$1</color>"
+EDITOR_MESSAGE_SAVEERROR    "Level konnte nicht gespeichert werden. Bitte Logs überprüfen"
+EDITOR_MESSAGE_RELOADED     "Der Level wurde neu geladen"
+EDITOR_MESSAGE_UNDOERROR    "Bereits bei der ältesten Änderung"
+EDITOR_MESSAGE_REDOERROR    "Bereits bei der neuesten Änderung"
+EDITOR_MESSAGE_SNAP2GRIDON  "In Raster einrasten: Benutze Raster von $1 × $2"
+EDITOR_MESSAGE_SNAP2GRIDOFF "In Raster einrasten: deaktiviert"
+EDITOR_MESSAGE_DEFAULTLAYER "Zur <color=$1>Standard</color>-Ebene gewechselt"
+EDITOR_MESSAGE_GREENLAYER   "Zur <color=$1>grünen</color> Ebene gewechselt"
+EDITOR_MESSAGE_YELLOWLAYER  "Zur <color=$1>gelben</color> Ebene gewechselt"
 
 
 
@@ -180,13 +386,10 @@ LEV_DEMO_5                  "<color=$COLOR_TITLE>Versuch es selbst!</color> Jetz
 //
 
 //
-// Note to translators:
+// Translators:
 //
-// Since the game uses bitmap fonts, parts of
-// the translation don't accept special characters.
-//
-// This section does not accept language-specific
-// special characters.
+// This section accepts SOME language-specific
+// special characters. Please test as necessary.
 //
 // If a translation is not possible, you may
 // leave the following sentences in English.
@@ -203,7 +406,7 @@ LEV_DEMO_5                  "<color=$COLOR_TITLE>Versuch es selbst!</color> Jetz
 // Heads-Up Display
 HUD_SCORE                   "Punkte"
 HUD_TIME                    "Zeit"
-HUD_COLLECTIBLES            "Energie"
+HUD_POWER                   "Energie"
 
 // Level Cleared animation
 CLEARED_LINE1               "DU HAST ZONE $LEVEL_ACT"
@@ -212,30 +415,16 @@ CLEARED_POWER               "Energiebonus"
 CLEARED_TIME                "Zeitbonus"
 CLEARED_SCORE               "Punkte"
 
-// Main Menu
-// NOTE BY TRANSLATOR: string below should be "MENÜ"
-MAINMENU_TITLE              "MENUE"
-MAINMENU_PLAY               "SPIELEN"
-MAINMENU_CREATE             "ERSTELLEN"
-MAINMENU_SHARE              "TEILEN"
-MAINMENU_OPTIONS            "EINSTELLUNGEN"
-MAINMENU_QUIT               "ENDE"
+// Game Over
+GAMEOVER_PART1              "SPIEL"
+GAMEOVER_PART2              "VORBEI"
 
-// Create Menu
-CREATEMENU_TITLE            "ERSTELLEN"
-CREATEMENU_PLAY             "DEMO SPIELEN"
-CREATEMENU_LEARN            "LERNEN"
-CREATEMENU_SCRIPTING        "SURGESCRIPT"
-// NOTE BY TRANSLATOR: string below should be "ZURÜCK"
-CREATEMENU_BACK             "ZURUECK"
+// Time Over
+TIMEOVER_PART1              "DIE ZEIT"
+TIMEOVER_PART2              "IST UM"
 
-// Congratulations Screen
-// NOTE BY TRANSLATOR: string below should be "DANKE FÜRS SPIELEN"
-CONGRATULATIONS_TITLE       "DANKE FUERS SPIELEN"
-CONGRATULATIONS_SHARE       "TEILEN"
-CONGRATULATIONS_DONATE      "SPENDEN"
-// NOTE BY TRANSLATOR: string below should be "ZURÜCK"
-CONGRATULATIONS_BACK        "ZURUECK"
-
-// Loading Screen
-LOADING_TEXT                "Laden ..."
+// Pause Menu
+PAUSE_TITLE                 "PAUSE"
+PAUSE_CONTINUE              "WEITER"
+PAUSE_RESTART               "NEUSTART"
+PAUSE_EXIT                  "ENDE"

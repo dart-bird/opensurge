@@ -1,7 +1,7 @@
 #
 # Open Surge Engine
 # CMakeLists.txt - CMake script
-# Copyright (C) 2008-2019  Alexandre Martins <alemartf@gmail.com>
+# Copyright (C) 2008-2023  Alexandre Martins <alemartf@gmail.com>
 # http://opensurge2d.org
 #
 # This program is free software; you can redistribute it and/or modify
@@ -25,307 +25,287 @@
 # Initializing...
 CMAKE_MINIMUM_REQUIRED(VERSION 3.1)
 PROJECT(opensurge)
-SET(GAME_UNIXNAME "${CMAKE_PROJECT_NAME}")
-SET(GAME_NAME "Open Surge")
-FUNCTION(READ_VERSION VERSION_STRING)
-  SET(VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/core/global.h")
-  SET(VERSION_SUP_REGEX "#define[ \t]+GAME_SUP_VERSION[ \t]+(.+)")
-  SET(VERSION_SUB_REGEX "#define[ \t]+GAME_SUB_VERSION[ \t]+(.+)")
-  SET(VERSION_WIP_REGEX "#define[ \t]+GAME_WIP_VERSION[ \t]+(.+)")
-  FILE(STRINGS "${VERSION_FILE}" GAME_SUP_VERSION REGEX "${VERSION_SUP_REGEX}")
-  FILE(STRINGS "${VERSION_FILE}" GAME_SUB_VERSION REGEX "${VERSION_SUB_REGEX}")
-  FILE(STRINGS "${VERSION_FILE}" GAME_WIP_VERSION REGEX "${VERSION_WIP_REGEX}")
-  STRING(REGEX REPLACE ${VERSION_SUP_REGEX} "\\1" GAME_SUP_VERSION "${GAME_SUP_VERSION}")
-  STRING(REGEX REPLACE ${VERSION_SUB_REGEX} "\\1" GAME_SUB_VERSION "${GAME_SUB_VERSION}")
-  STRING(REGEX REPLACE ${VERSION_WIP_REGEX} "\\1" GAME_WIP_VERSION "${GAME_WIP_VERSION}")
-  SET(${VERSION_STRING} "${GAME_SUP_VERSION}.${GAME_SUB_VERSION}.${GAME_WIP_VERSION}" PARENT_SCOPE)
-ENDFUNCTION()
-READ_VERSION(GAME_VERSION)
-MESSAGE("${GAME_NAME} version ${GAME_VERSION}")
-SET(HELP "You might get some luck by tweaking CMake options with ccmake | cmake-gui, or you can get help at opensurge2d.org")
-
-# Default config
 SET(CMAKE_C_STANDARD 99)
+SET(GAME_UNIXNAME "${CMAKE_PROJECT_NAME}")
+SET(GAME_NAME "Open Surge Engine")
+
+FUNCTION(READ_VERSION OUT_GAME_VERSION_STRING OUT_GAME_VERSION_MAJOR OUT_GAME_VERSION_MINOR OUT_GAME_VERSION_PATCH OUT_GAME_VERSION_BUILD)
+  SET(VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/core/global.h")
+  SET(VERSION_MAJOR_REGEX "#define[ \t]+GAME_VERSION_SUP[ \t]+(.+)")
+  SET(VERSION_MINOR_REGEX "#define[ \t]+GAME_VERSION_SUB[ \t]+(.+)")
+  SET(VERSION_PATCH_REGEX "#define[ \t]+GAME_VERSION_WIP[ \t]+(.+)")
+  SET(VERSION_BUILD_REGEX "#define[ \t]+GAME_VERSION_FIX[ \t]+(.+)")
+  FILE(STRINGS "${VERSION_FILE}" GAME_VERSION_MAJOR REGEX "${VERSION_MAJOR_REGEX}")
+  FILE(STRINGS "${VERSION_FILE}" GAME_VERSION_MINOR REGEX "${VERSION_MINOR_REGEX}")
+  FILE(STRINGS "${VERSION_FILE}" GAME_VERSION_PATCH REGEX "${VERSION_PATCH_REGEX}")
+  FILE(STRINGS "${VERSION_FILE}" GAME_VERSION_BUILD REGEX "${VERSION_BUILD_REGEX}")
+  STRING(REGEX REPLACE ${VERSION_MAJOR_REGEX} "\\1" GAME_VERSION_MAJOR "${GAME_VERSION_MAJOR}")
+  STRING(REGEX REPLACE ${VERSION_MINOR_REGEX} "\\1" GAME_VERSION_MINOR "${GAME_VERSION_MINOR}")
+  STRING(REGEX REPLACE ${VERSION_PATCH_REGEX} "\\1" GAME_VERSION_PATCH "${GAME_VERSION_PATCH}")
+  STRING(REGEX REPLACE ${VERSION_BUILD_REGEX} "\\1" GAME_VERSION_BUILD "${GAME_VERSION_BUILD}")
+  SET(${OUT_GAME_VERSION_STRING} "${GAME_VERSION_MAJOR}.${GAME_VERSION_MINOR}.${GAME_VERSION_PATCH}.${GAME_VERSION_BUILD}" PARENT_SCOPE)
+  SET(${OUT_GAME_VERSION_MAJOR} "${GAME_VERSION_MAJOR}" PARENT_SCOPE)
+  SET(${OUT_GAME_VERSION_MINOR} "${GAME_VERSION_MINOR}" PARENT_SCOPE)
+  SET(${OUT_GAME_VERSION_PATCH} "${GAME_VERSION_PATCH}" PARENT_SCOPE)
+  SET(${OUT_GAME_VERSION_BUILD} "${GAME_VERSION_BUILD}" PARENT_SCOPE)
+ENDFUNCTION()
+
+FUNCTION(READ_YEARS OUT_GAME_YEARS)
+  SET(VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/core/global.h")
+  SET(YEARS_REGEX "#define[ \t]+GAME_YEAR[S]?[ \t]+\"(.+)\"")
+  FILE(STRINGS "${VERSION_FILE}" GAME_YEARS REGEX "${YEARS_REGEX}")
+  STRING(REGEX REPLACE ${YEARS_REGEX} "\\1" GAME_YEARS "${GAME_YEARS}")
+  SET(${OUT_GAME_YEARS} "${GAME_YEARS}" PARENT_SCOPE)
+ENDFUNCTION()
+
+READ_VERSION(GAME_VERSION_STRING GAME_VERSION_MAJOR GAME_VERSION_MINOR GAME_VERSION_PATCH GAME_VERSION_BUILD)
+READ_YEARS(GAME_YEARS)
+
+MESSAGE("${GAME_NAME} version ${GAME_VERSION_STRING}")
+SET(HELP "Tweak the CMake options or get help at opensurge2d.org")
+
+# Build type
 IF(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  SET(CMAKE_BUILD_TYPE "Release" CACHE STRING "Debug | Release | MinSizeRel | RelWithDebInfo" FORCE)
+  SET(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Debug | Release | MinSizeRel | RelWithDebInfo" FORCE)
   SET_PROPERTY(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 ENDIF()
-SET(DEFS "") # #define'd stuff
+
+IF(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+  SET(GAME_DEBUG_INFO 1)
+ENDIF()
+
+# #define'd stuff
+SET(DEFS "")
 
 # User options
-OPTION(USE_A5 "Use the Allegro 5 backend" ON)
-OPTION(USE_STATIC "Use static libs whenever possible (legacy; Allegro 4 only)" ON)
-OPTION(USE_OPENAL "Use OpenAL for audio playback (deprecated; Allegro 4 only)" OFF)
+OPTION(SURGESCRIPT_STATIC "Link SurgeScript statically" OFF)
 OPTION(ALLEGRO_STATIC "Use the static version of Allegro 5 (Windows only)" OFF)
 OPTION(ALLEGRO_MONOLITH "Use the monolith version of Allegro 5" OFF)
+IF(UNIX)
+  OPTION(DESKTOP_INSTALL "Add Open Surge to the Desktop menu when installing" ON)
+ENDIF()
+
+# Set the build type & version (optional; this helps identify the platform and the development builds)
+SET(GAME_BUILD_VERSION "" CACHE STRING "Build type & version (optional)")
+IF(NOT GAME_BUILD_VERSION STREQUAL "")
+  LIST(APPEND DEFS "GAME_BUILD_VERSION=\"${GAME_BUILD_VERSION}\"")
+ENDIF()
+
+# Set the build date
+OPTION(WANT_BUILD_DATE "Include the build date in the binary (disable for reproducible builds)" ON)
+IF(WANT_BUILD_DATE)
+  LIST(APPEND DEFS "GAME_BUILD_DATE=__DATE__")
+ENDIF()
+
+# Play a MOD (options screen)
+OPTION(WANT_PLAYMOD "Display the Play a MOD feature in the options screen (experimental)" ON)
+IF(WANT_PLAYMOD)
+  LIST(APPEND DEFS "WANT_PLAYMOD=1")
+ENDIF()
+
+# User-specified paths
 SET(ALLEGRO_LIBRARY_PATH "${CMAKE_LIBRARY_PATH}" CACHE PATH "Where to look for Allegro & its dependencies")
-SET(ALLEGRO_INCLUDE_PATH "${CMAKE_INCLUDE_PATH}" CACHE PATH "Custom include directory for Allegro (where to look for the header files)")
+SET(ALLEGRO_INCLUDE_PATH "${CMAKE_INCLUDE_PATH}" CACHE PATH "Where to look for the header files of Allegro")
 SET(SURGESCRIPT_LIBRARY_PATH "${CMAKE_LIBRARY_PATH}" CACHE PATH "Where to look for SurgeScript")
-SET(SURGESCRIPT_INCLUDE_PATH "${CMAKE_INCLUDE_PATH}" CACHE PATH "Custom include directory for SurgeScript (where to look for the header files)")
+SET(SURGESCRIPT_INCLUDE_PATH "${CMAKE_INCLUDE_PATH}" CACHE PATH "Where to look for the header files of SurgeScript")
+SET(PHYSFS_LIBRARY_PATH "${CMAKE_LIBRARY_PATH}" CACHE PATH "Where to look for PhysicsFS")
+SET(PHYSFS_INCLUDE_PATH "${CMAKE_INCLUDE_PATH}" CACHE PATH "Where to look for the header files of PhysicsFS")
+IF(UNIX AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  SET(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install path prefix (prepended onto install directories)" FORCE)
+ENDIF()
 IF(UNIX)
-  SET(GAME_DATADIR "/usr/local/share/games/${GAME_UNIXNAME}" CACHE PATH "The directory in which the game assets will be stored")
-  IF(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-    SET(CMAKE_INSTALL_PREFIX "/usr/local/games" CACHE PATH "The directory in which the game will be installed" FORCE)
-  ENDIF()
-  OPTION(DESKTOP_INSTALL "Add Open Surge to the Desktop menu (freedesktop.org) when installing" ON)
-  SET(DESKTOP_ENTRY_PATH "/usr/share/applications" CACHE PATH "Where to store the .desktop file when installing")
+  SET(GAME_BINDIR "games" CACHE PATH "Directory in which the game executable will be stored when installing")
+  SET(GAME_DATADIR "share/games/${GAME_UNIXNAME}" CACHE PATH "Directory in which the game data will be stored when installing")
+  SET(GAME_USERDIRNAME "${GAME_UNIXNAME}" CACHE PATH "Name of the user-modifiable asset directory")
   SET(DESKTOP_ICON_PATH "/usr/share/pixmaps" CACHE PATH "Where to store the icon file when installing")
+  SET(DESKTOP_ENTRY_PATH "/usr/share/applications" CACHE PATH "Where to store the .desktop file when installing")
+  SET(DESKTOP_METAINFO_PATH "/usr/share/metainfo" CACHE PATH "Where to store the metainfo file. You shouldn't change this (check the AppStream spec).")
 ENDIF()
 
-# Compiling the development version?
-OPTION(BLEEDING_EDGE "Enable if using the development version" OFF)
-SET(BLEEDING_EDGE_VERSION "custom" CACHE STRING "Build version (bleeding edge)")
-IF(BLEEDING_EDGE)
-  SET(DEFS "${DEFS}" "GAME_BUILD_VERSION='${BLEEDING_EDGE_VERSION}-dev'")
+# Run in place? (i.e., read assets from the directory of the executable)
+OPTION(GAME_RUNINPLACE "Read assets only from the directory of the executable. For testing & development." OFF)
+IF(GAME_RUNINPLACE)
+  LIST(APPEND DEFS "GAME_RUNINPLACE=1")
+  MESSAGE(STATUS "Detected the RUN IN PLACE flag")
 ENDIF()
 
-# data directory (assets folder)
+# data folders (game assets)
 IF(UNIX)
-  IF(NOT IS_ABSOLUTE "${GAME_DATADIR}")
-    MESSAGE(FATAL_ERROR "GAME_DATADIR must be an absolute path (current value: ${GAME_DATADIR})")
-  ENDIF()
-  SET(DEFS "${DEFS}" "GAME_DATADIR=\"${GAME_DATADIR}\"")
-ENDIF()
-
-# Use the Allegro 5 backend
-IF(USE_A5)
-  SET(DEFS ${DEFS} "A5BUILD")
-  MESSAGE(STATUS "Building using the Allegro 5 backend...")
-ELSE()
-  MESSAGE(STATUS "Building using the legacy Allegro 4 backend...")
-ENDIF()
-
-# legacy option: prefer static libs
-IF(NOT USE_A5 AND USE_STATIC)
-  IF(WIN32)
-    SET(CMAKE_FIND_LIBRARY_SUFFIXES .lib .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
+  LIST(APPEND DEFS "GAME_USERDIRNAME=\"${GAME_USERDIRNAME}\"")
+  IF(IS_ABSOLUTE "${GAME_DATADIR}")
+    LIST(APPEND DEFS "GAME_DATADIR=\"${GAME_DATADIR}\"")
+  ELSEIF(IS_ABSOLUTE "${CMAKE_INSTALL_PREFIX}/${GAME_DATADIR}")
+    LIST(APPEND DEFS "GAME_DATADIR=\"${CMAKE_INSTALL_PREFIX}/${GAME_DATADIR}\"")
   ELSE()
-    SET(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    MESSAGE(FATAL_ERROR "GAME_DATADIR is not an absolute path: ${CMAKE_INSTALL_PREFIX}/${GAME_DATADIR}")
   ENDIF()
+ENDIF()
+
+# Generate files from templates
+FUNCTION(generate_file TEMPLATE)
+  CONFIGURE_FILE("src/misc/${TEMPLATE}.in" "src/misc/${TEMPLATE}" @ONLY)
+ENDFUNCTION()
+
+# Generate the content of the credits screen
+SET(COPYRIGHT_DATA_CSV "")
+FILE(STRINGS "src/misc/copyright_data.csv" COPYRIGHT_DATA_CSV_LIST ENCODING UTF-8)
+FOREACH(line IN LISTS COPYRIGHT_DATA_CSV_LIST)
+  SET(COPYRIGHT_DATA_CSV "${COPYRIGHT_DATA_CSV}\n\"${line}\\n\"")
+ENDFOREACH()
+generate_file("credits.c")
+
+# Generate desktop & metadata files
+# They require the absolute path of the icon
+IF(DEFINED DESKTOP_ICON_PATH)
+  SET(DESKTOP_ICON_FULLPATH "${DESKTOP_ICON_PATH}/opensurge.png")
+  generate_file("opensurge.desktop")
+  generate_file("opensurge.appdata.xml")
+ENDIF()
+
+# Generate resource file
+IF(WIN32)
+  generate_file("opensurge.rc")
 ENDIF()
 
 # ------------------------------------------
 # Finding the required libraries
 # ------------------------------------------
-IF(USE_A5)
 
-  # Find Allegro 5 & addons
-  SET(REQUIRED_A5_LIBS
-    allegro
-    allegro_image
-    allegro_primitives
-    allegro_font
-    allegro_ttf
-    allegro_acodec
-    allegro_audio
-    allegro_dialog
-    allegro_memfile
-  )
+# Find Allegro 5 & addons
+SET(REQUIRED_A5_LIBS
+  allegro
+  allegro_main
+  allegro_image
+  allegro_primitives
+  allegro_font
+  allegro_ttf
+  allegro_acodec
+  allegro_audio
+  allegro_dialog
+  allegro_memfile
+  allegro_physfs
+)
 
-  # OSX requires allegro_main
-  IF(APPLE)
-    LIST(APPEND REQUIRED_A5_LIBS allegro_main)
-  ENDIF()
+# Use the monolith version
+IF(ALLEGRO_MONOLITH)
+  SET(REQUIRED_A5_LIBS allegro_monolith)
+ENDIF()
 
-  # Use the monolith version
-  IF(ALLEGRO_MONOLITH)
-    SET(REQUIRED_A5_LIBS allegro_monolith)
-  ENDIF()
+# Use static libs
+IF(ALLEGRO_STATIC)
 
-  # Use static libs
-  IF(ALLEGRO_STATIC)
-    # add -static suffix
-    SET(A5_LIBS "")
-    FOREACH(A5_LIB ${REQUIRED_A5_LIBS})
-      LIST(APPEND A5_LIBS "${A5_LIB}-static")
-    ENDFOREACH()
-    SET(REQUIRED_A5_LIBS ${A5_LIBS})
-
-    # define ALLEGRO_STATICLINK
-    LIST(APPEND DEFS "ALLEGRO_STATICLINK")
-
-    # require Win32 libs
-    IF(WIN32)
-      LIST(APPEND REQUIRED_A5_LIBS
-        mingw32
-        #dumb
-        #FLAC
-        vorbisfile
-        vorbis
-        freetype
-        ogg
-        #physfs
-        png16
-        z
-        #zlibstatic
-        gdiplus
-        uuid
-        kernel32
-        winmm
-        psapi
-        opengl32
-        glu32
-        user32
-        comdlg32
-        gdi32
-        shell32
-        ole32
-        advapi32
-        ws2_32
-        shlwapi
-        dsound
-        #d3dx9 # needed?
-        jpeg
-        #opusfile
-        #opus
-        #webp
-      )
-    ELSE()
-      MESSAGE(FATAL_ERROR "Static linking is currently unavailable for this platform.")
-    ENDIF()
-  ENDIF()
-
-  # Write to LALLEGRO5
-  SET(LALLEGRO5 "")
+  # add -static suffix
+  SET(A5_LIBS "")
   FOREACH(A5_LIB ${REQUIRED_A5_LIBS})
-    STRING(TOUPPER "L${A5_LIB}" _A5_LIB)
-    FIND_LIBRARY(${_A5_LIB} NAMES "${A5_LIB}" PATHS ${ALLEGRO_LIBRARY_PATH})
-    IF(NOT ${_A5_LIB})
-      MESSAGE(FATAL_ERROR "Can't find Allegro 5 lib (lib${A5_LIB}). ${HELP}")
-    ELSE()
-      MESSAGE(STATUS "Found ${A5_LIB} at ${${_A5_LIB}}...")
-      SET(LALLEGRO5 "${LALLEGRO5}" "${${_A5_LIB}}")
-    ENDIF()
+    LIST(APPEND A5_LIBS "${A5_LIB}-static")
   ENDFOREACH()
+  SET(REQUIRED_A5_LIBS ${A5_LIBS})
 
-ELSE()
-  
-  # Allegro 4: liballeg
-  FIND_LIBRARY(LALLEG NAMES alleg PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LALLEG)
-    MESSAGE(FATAL_ERROR "Fatal error: couldn't find the Allegro game programming library (liballeg)! ${HELP}")
-  ELSE(NOT LALLEG)
-    IF(UNIX)
-      SET(ALLEGRO_RECOMMENDED_VERSION "4.4.3")
-      EXECUTE_PROCESS(COMMAND allegro-config --version OUTPUT_VARIABLE ALLEGRO_UNIX_VERSION)
-      IF(ALLEGRO_UNIX_VERSION)
-        STRING(REGEX REPLACE "[ \r\n\t]+$" "" ALLEGRO_UNIX_VERSION ${ALLEGRO_UNIX_VERSION})
-      ENDIF(ALLEGRO_UNIX_VERSION)
-      IF(NOT ALLEGRO_UNIX_VERSION STREQUAL ALLEGRO_RECOMMENDED_VERSION)
-        MESSAGE("\nWARNING: your Allegro version is ${ALLEGRO_UNIX_VERSION}. The recommended version is ${ALLEGRO_RECOMMENDED_VERSION}.\n         ${GAME_NAME} may not compile properly!\n")
-      ENDIF(NOT ALLEGRO_UNIX_VERSION STREQUAL ALLEGRO_RECOMMENDED_VERSION)
-    ENDIF(UNIX)
-  ENDIF(NOT LALLEG)
+  # define ALLEGRO_STATICLINK
+  LIST(APPEND DEFS "ALLEGRO_STATICLINK")
 
-  # loadpng: libloadpng, libpng and zlib
-  FIND_LIBRARY(LLOADPNG NAMES loadpng PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LLOADPNG)
-    MESSAGE(FATAL_ERROR "Fatal error: libloadpng not found! ${HELP}")
-  ENDIF(NOT LLOADPNG)
-
-  FIND_LIBRARY(LPNG NAMES png PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LPNG)
-    MESSAGE(FATAL_ERROR "Fatal error: libpng not found! ${HELP}")
-  ENDIF(NOT LPNG)
-
-  FIND_LIBRARY(LZ NAMES z PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LZ)
-    MESSAGE(FATAL_ERROR "Fatal error: zlib not found! ${HELP}")
-  ENDIF(NOT LZ)
-
-  # JPGalleg: libjpgalleg
-  FIND_LIBRARY(LJPGALLEG NAMES jpgalleg PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LJPGALLEG)
-    MESSAGE(FATAL_ERROR "Fatal error: libjpgalleg not found! ${HELP}")
-  ENDIF(NOT LJPGALLEG)
-
-  # Ogg/Vorbis: libogg, libvorbis, libvorbisfile
-  FIND_LIBRARY(LOGG NAMES ogg PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LOGG)
-    MESSAGE(FATAL_ERROR "Fatal error: libogg not found! ${HELP}")
-  ENDIF(NOT LOGG)
-
-  FIND_LIBRARY(LVORBIS NAMES vorbis PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LVORBIS)
-    MESSAGE(FATAL_ERROR "Fatal error: libvorbis not found! ${HELP}")
-  ENDIF(NOT LVORBIS)
-
-  FIND_LIBRARY(LVORBISFILE NAMES vorbisfile PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LVORBISFILE)
-    MESSAGE(FATAL_ERROR "Fatal error: libvorbisfile not found! ${HELP}")
-  ENDIF(NOT LVORBISFILE)
-
-  # LOGG: liblogg
-  IF(NOT USE_OPENAL)
-    MESSAGE(STATUS "Building using Allegro for audio playback...")
-    FIND_LIBRARY(LLOGG NAMES logg PATHS ${ALLEGRO_LIBRARY_PATH})
-    IF(NOT LLOGG)
-      MESSAGE(FATAL_ERROR "Fatal error: liblogg not found! ${HELP}")
-    ENDIF(NOT LLOGG)
-    SET(AUDIO_LIBS logg vorbisfile vorbis ogg)
-  ENDIF(NOT USE_OPENAL)
-
-  # OpenAL & ALURE
-  IF(USE_OPENAL)
-    MESSAGE(STATUS "Building using OpenAL for audio playback...")
-    FIND_LIBRARY(LOPENAL NAMES openal OpenAL OpenAL32 al PATHS ${ALLEGRO_LIBRARY_PATH})
-    IF(NOT LOPENAL)
-      MESSAGE(FATAL_ERROR "Fatal error: can't find OpenAL! ${HELP}")
-    ENDIF(NOT LOPENAL)
-    FIND_LIBRARY(LALURE NAMES alure-static ALURE32-static PATHS ${ALLEGRO_LIBRARY_PATH}) # try the static version first
-    IF(NOT LALURE)
-      FIND_LIBRARY(LALURE NAMES alure PATHS ${ALLEGRO_LIBRARY_PATH})
-      IF(NOT LALURE)
-        MESSAGE(FATAL_ERROR "Fatal error: can't find ALURE! ${HELP}")
-      ENDIF(NOT LALURE)
-    ENDIF(NOT LALURE)
-
-    IF(UNIX)
-      FIND_LIBRARY(LPTHREAD NAMES pthread PATHS ${ALLEGRO_LIBRARY_PATH})
-      IF(NOT LPTHREAD)
-        MESSAGE(FATAL_ERROR "Fatal error: can't find libpthread! ${HELP}")
-      ENDIF(NOT LPTHREAD)
-      IF(NOT ${CMAKE_SYSTEM_NAME} MATCHES ".*BSD|DragonFly.*")
-        FIND_LIBRARY(LDL NAMES dl PATHS ${ALLEGRO_LIBRARY_PATH})
-        IF(NOT LDL)
-          MESSAGE(FATAL_ERROR "Fatal error: can't find libdl! ${HELP}")
-        ENDIF(NOT LDL)
-      ENDIF(NOT ${CMAKE_SYSTEM_NAME} MATCHES ".*BSD|DragonFly.*")
-    ELSE(UNIX)
-      SET(LPTHREAD "") # TODO?
-      SET(LDL "")
-    ENDIF(UNIX)
-
-    SET(DEFS ${DEFS} __USE_OPENAL__ ALURE_STATIC_LIBRARY)
-    SET(AUDIO_LIBS ${LALURE} ${LOPENAL} vorbisfile vorbis ogg stdc++ ${LPTHREAD} ${LDL})
-  ENDIF(USE_OPENAL)
-
-  # Alfont: libalfont
-  FIND_LIBRARY(LALFONT NAMES alfont PATHS ${ALLEGRO_LIBRARY_PATH})
-  IF(NOT LALFONT)
-    MESSAGE(FATAL_ERROR "Fatal error: modified alfont not found! ${HELP}")
-  ENDIF(NOT LALFONT)
+  # require Win32 libs
+  IF(WIN32)
+    LIST(APPEND REQUIRED_A5_LIBS
+      mingw32
+      #dumb
+      #FLAC
+      vorbisfile
+      vorbis
+      freetype
+      ogg
+      physfs
+      png16
+      z
+      #zlibstatic
+      gdiplus
+      uuid
+      kernel32
+      winmm
+      psapi
+      opengl32
+      glu32
+      user32
+      comdlg32
+      gdi32
+      shell32
+      ole32
+      advapi32
+      ws2_32
+      shlwapi
+      jpeg
+      d3d9
+      dinput8
+      dsound
+      #opusfile
+      #opus
+      #webp
+    )
+  ELSE()
+    MESSAGE(FATAL_ERROR "Static linking is currently unavailable for this platform.")
+  ENDIF()
 
 ENDIF()
+
+# Find the header files of Allegro
+FIND_PATH(ALLEGRO_INCDIR NAMES "allegro5/allegro.h" PATHS ${ALLEGRO_INCLUDE_PATH})
+IF(NOT ALLEGRO_INCDIR)
+  MESSAGE(FATAL_ERROR "Can't find allegro.h. ${HELP}")
+ELSE()
+  MESSAGE(STATUS "Found allegro.h at ${ALLEGRO_INCDIR}/allegro5")
+ENDIF()
+
+# Write to LALLEGRO5
+SET(LALLEGRO5 "")
+FOREACH(A5_LIB ${REQUIRED_A5_LIBS})
+  STRING(TOUPPER "L${A5_LIB}" _A5_LIB)
+  FIND_LIBRARY(${_A5_LIB} NAMES "${A5_LIB}" PATHS ${ALLEGRO_LIBRARY_PATH})
+  IF(NOT ${_A5_LIB})
+    MESSAGE(FATAL_ERROR "Can't find lib${A5_LIB}. ${HELP}")
+  ELSE()
+    MESSAGE(STATUS "Found lib${A5_LIB} at ${${_A5_LIB}}...")
+    SET(LALLEGRO5 "${LALLEGRO5}" "${${_A5_LIB}}")
+  ENDIF()
+ENDFOREACH()
 
 # SurgeScript: libsurgescript
-FIND_LIBRARY(LSURGESCRIPT NAMES surgescript PATHS ${SURGESCRIPT_LIBRARY_PATH})
-IF(NOT LSURGESCRIPT)
-  MESSAGE(FATAL_ERROR "Fatal error: can't find libsurgescript! ${HELP}")
+FIND_PATH(SURGESCRIPT_INCDIR NAMES "surgescript.h" PATHS ${SURGESCRIPT_INCLUDE_PATH})
+IF(NOT SURGESCRIPT_INCDIR)
+  MESSAGE(FATAL_ERROR "Can't find surgescript.h! ${HELP}")
 ELSE()
-  MESSAGE(STATUS "Found surgescript at ${LSURGESCRIPT}...")
+  MESSAGE(STATUS "Found surgescript.h at ${SURGESCRIPT_INCDIR}")
 ENDIF()
 
-# setup preprocessor #define's
-IF(MSVC)
-  FOREACH(d ${DEFS})
-    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /D${d}")
-  ENDFOREACH()
-ELSE()
-  FOREACH(d ${DEFS})
-    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D'${d}'")
-  ENDFOREACH()
+SET(LSURGESCRIPT_NAME surgescript)
+IF(SURGESCRIPT_STATIC)
+  SET(LSURGESCRIPT_NAME "${LSURGESCRIPT_NAME}-static")
 ENDIF()
+
+FIND_LIBRARY(LSURGESCRIPT NAMES "${LSURGESCRIPT_NAME}" PATHS ${SURGESCRIPT_LIBRARY_PATH})
+IF(NOT LSURGESCRIPT)
+  MESSAGE(FATAL_ERROR "Can't find lib${LSURGESCRIPT_NAME}! ${HELP}")
+ELSE()
+  MESSAGE(STATUS "Found lib${LSURGESCRIPT_NAME} at ${LSURGESCRIPT}...")
+ENDIF()
+
+# PhysicsFS: libphysfs
+FIND_PATH(PHYSFS_INCDIR NAMES "physfs.h" PATHS ${PHYSFS_INCLUDE_PATH})
+IF(NOT PHYSFS_INCDIR)
+  MESSAGE(FATAL_ERROR "Can't find physfs.h! ${HELP}")
+ELSE()
+  MESSAGE(STATUS "Found physfs.h at ${PHYSFS_INCDIR}")
+ENDIF()
+
+FIND_LIBRARY(LPHYSFS NAMES "physfs" PATHS ${PHYSFS_LIBRARY_PATH})
+IF(NOT LPHYSFS)
+  MESSAGE(FATAL_ERROR "Can't find libphysfs! ${HELP}")
+ELSE()
+  MESSAGE(STATUS "Found libphysfs at ${LPHYSFS}...")
+ENDIF()
+
+
+
+
 
 # ------------------------------------------
 # Listing the source files
@@ -333,74 +313,101 @@ ENDIF()
 
 # adding sources
 SET(GAME_SRCS
-  src/core/nanoparser/nanoparser.c
-  src/core/whereami/whereami.c
-  src/core/utf8/utf8.c
-  src/core/zip/zip.c
-  src/core/assetfs.c
+  src/core/animation.c
+  src/core/asset.c
   src/core/audio.c
   src/core/color.c
   src/core/commandline.c
+  src/core/config.c
   src/core/engine.c
+  src/core/fadefx.c
   src/core/font.c
-  src/core/fontext.c
   src/core/image.c
+  src/core/import.c
   src/core/input.c
   src/core/inputmap.c
-  src/core/install.c
+  src/core/keyframes.c
   src/core/lang.c
   src/core/logfile.c
-  src/core/modmanager.c
-  src/core/web.c
+  src/core/modutils.c
+  src/core/nanoparser.c
   src/core/prefs.c
   src/core/quest.c
   src/core/resourcemanager.c
   src/core/scene.c
   src/core/screenshot.c
-  src/core/fadefx.c
+  src/core/shader.c
   src/core/sprite.c
   src/core/storyboard.c
-  src/core/stringutil.c
   src/core/timer.c
-  src/core/util.c
-  src/core/v2d.c
   src/core/video.c
+  src/core/web.c
 
+  src/util/csv.c
+  src/util/dictionary.c
+  src/util/fasthash.c
+  src/util/iterator.c
+  src/util/numeric.c
+  src/util/stringutil.c
+  src/util/util.c
+  src/util/v2d.c
+  src/util/transform.c
+
+  src/scenes/mobile/subscenes/info.c
+  src/scenes/mobile/subscenes/credits.c
+  src/scenes/mobile/subscenes/screenshot.c
+  src/scenes/mobile/util/touch.c
+  src/scenes/mobile/menu.c
+  src/scenes/mobile/popup.c
   src/scenes/util/editorcmd.c
   src/scenes/util/editorgrp.c
-  src/scenes/util/grouptree.c
+  src/scenes/util/levparser.c
   src/scenes/confirmbox.c
   src/scenes/credits.c
   src/scenes/editorhelp.c
   src/scenes/editorpal.c
   src/scenes/gameover.c
+  src/scenes/info.c
   src/scenes/intro.c
   src/scenes/langselect.c
   src/scenes/level.c
-  src/scenes/options.c
+  src/scenes/modloader.c
   src/scenes/pause.c
   src/scenes/quest.c
-  src/scenes/questselect.c
   src/scenes/stageselect.c
+  src/scenes/settings.c
 
+  src/scripting/util/iterators.c
   src/scripting/scripting.c
   src/scripting/application.c
   src/scripting/surgeengine.c
   src/scripting/actor.c
+  src/scripting/androidplatform.c
   src/scripting/animation.c
   src/scripting/brick.c
+  src/scripting/brickparticle.c
   src/scripting/camera.c
   src/scripting/collisions.c
   src/scripting/console.c
+  src/scripting/entitycontainer.c
+  src/scripting/entitymanager.c
+  src/scripting/entitytree.c
   src/scripting/events.c
+  src/scripting/game.c
   src/scripting/input.c
   src/scripting/lang.c
   src/scripting/level.c
   src/scripting/levelmanager.c
+  src/scripting/levelobjectcontainer.c
+  src/scripting/loaderthread.c
+  src/scripting/mobilegamepad.c
   src/scripting/mouse.c
   src/scripting/music.c
+  src/scripting/object.c
   src/scripting/obstaclemap.c
+  src/scripting/platform.c
   src/scripting/player.c
+  src/scripting/playermanager.c
   src/scripting/prefs.c
   src/scripting/screen.c
   src/scripting/sensor.c
@@ -409,6 +416,7 @@ SET(GAME_SRCS
   src/scripting/time.c
   src/scripting/transform.c
   src/scripting/vector2.c
+  src/scripting/video.c
   src/scripting/web.c
   src/physics/obstacle.c
   src/physics/obstaclemap.c
@@ -417,8 +425,9 @@ SET(GAME_SRCS
   src/physics/sensorstate.c
   src/physics/collisionmask.c
 
-  src/entities/legacy/item.c
+  src/entities/legacy/entitymanager.c
   src/entities/legacy/enemy.c
+  src/entities/legacy/item.c
   src/entities/legacy/object_compiler.c
   src/entities/legacy/object_decorators.c
   src/entities/legacy/object_machine.c
@@ -430,75 +439,100 @@ SET(GAME_SRCS
   src/entities/actor.c
   src/entities/background.c
   src/entities/brick.c
+  src/entities/brickmanager.c
   src/entities/camera.c
   src/entities/character.c
-  src/entities/entitymanager.c
+  src/entities/mobilegamepad.c
   src/entities/player.c
-  src/entities/particle.c
   src/entities/renderqueue.c
+  src/entities/waterfx.c
 
-  src/misc/credits.c
+  src/third_party/fast_draw.c
+  src/third_party/ignorecase.c
+  src/third_party/utf8.c
+
   src/misc/icon.c
+  src/misc/license.c
+  ${CMAKE_CURRENT_BINARY_DIR}/src/misc/credits.c
 
   src/main.c
 )
 
 # adding headers
 SET(GAME_HEADERS
-  src/core/nanoparser/nanoparser.h
-  src/core/whereami/whereami.h
-  src/core/utf8/utf8.h
-  src/core/zip/zip.c
-  src/core/assetfs.h
+  src/core/animation.h
+  src/core/asset.h
   src/core/audio.h
   src/core/color.h
   src/core/commandline.h
+  src/core/config.h
   src/core/engine.h
-  src/core/fasthash.h
+  src/core/fadefx.h
   src/core/font.h
-  src/core/fontext.h
   src/core/global.h
-  src/core/hashtable.h
   src/core/image.h
+  src/core/import.h
   src/core/input.h
   src/core/inputmap.h
-  src/core/install.h
+  src/core/keyframes.h
   src/core/lang.h
   src/core/logfile.h
-  src/core/modmanager.h
-  src/core/web.h
+  src/core/modutils.h
+  src/core/nanoparser.h
   src/core/prefs.h
   src/core/quest.h
   src/core/resourcemanager.h
   src/core/scene.h
   src/core/screenshot.h
-  src/core/fadefx.h
-  src/core/spatialhash.h
+  src/core/shader.h
   src/core/sprite.h
   src/core/storyboard.h
-  src/core/stringutil.h
   src/core/timer.h
-  src/core/util.h
   src/core/video.h
-  src/core/v2d.h
+  src/core/web.h
 
+  src/util/csv.h
+  src/util/darray.h
+  src/util/dictionary.h
+  src/util/djb2.h
+  src/util/fasthash.h
+  src/util/hashtable.h
+  src/util/iterator.h
+  src/util/numeric.h
+  src/util/point2d.h
+  src/util/rect.h
+  src/util/stringutil.h
+  src/util/util.h
+  src/util/v2d.h
+  src/util/transform.h
+
+  src/scenes/mobile/subscenes/info.h
+  src/scenes/mobile/subscenes/credits.h
+  src/scenes/mobile/subscenes/screenshot.h
+  src/scenes/mobile/subscenes/subscene.h
+  src/scenes/mobile/util/touch.h
+  src/scenes/mobile/menu.h
+  src/scenes/mobile/popup.h
   src/scenes/util/editorcmd.h
   src/scenes/util/editorgrp.h
-  src/scenes/util/grouptree.h
+  src/scenes/util/levparser.h
   src/scenes/confirmbox.h
   src/scenes/editorhelp.h
   src/scenes/editorpal.h
   src/scenes/credits.h
   src/scenes/gameover.h
+  src/scenes/info.h
   src/scenes/intro.h
   src/scenes/langselect.h
   src/scenes/level.h
-  src/scenes/options.h
+  src/scenes/modloader.h
   src/scenes/pause.h
   src/scenes/quest.h
-  src/scenes/questselect.h
+  src/scenes/settings.h
   src/scenes/stageselect.h
 
+  src/scripting/util/iterators.h
+  src/scripting/loaderthread.h
   src/scripting/scripting.h
   src/physics/obstacle.h
   src/physics/obstaclemap.h
@@ -507,8 +541,10 @@ SET(GAME_HEADERS
   src/physics/sensorstate.h
   src/physics/collisionmask.h
 
-  src/entities/legacy/item.h
+  src/entities/legacy/spatialhash.h
+  src/entities/legacy/entitymanager.h
   src/entities/legacy/enemy.h
+  src/entities/legacy/item.h
   src/entities/legacy/object_compiler.h
   src/entities/legacy/object_decorators.h
   src/entities/legacy/object_machine.h
@@ -520,143 +556,95 @@ SET(GAME_HEADERS
   src/entities/actor.h
   src/entities/background.h
   src/entities/brick.h
+  src/entities/brickmanager.h
   src/entities/camera.h
   src/entities/character.h
-  src/entities/entitymanager.h
-  src/entities/object_compiler.h
-  src/entities/object_vm.h
+  src/entities/mobilegamepad.h
   src/entities/player.h
-  src/entities/particle.h
   src/entities/renderqueue.h
   src/entities/sfx.h
+  src/entities/waterfx.h
 
-  src/misc/iconwin.rc
+  src/third_party/fast_draw.h
+  src/third_party/ignorecase.h
+  src/third_party/utf8.h
+
+  ${CMAKE_CURRENT_BINARY_DIR}/src/misc/opensurge.rc
 )
-
-# Allegro 4 specifics
-IF(NOT USE_A5)
-  IF(UNIX)
-    SET(GAME_SRCS ${GAME_SRCS} src/misc/icon_a4.c)
-  ENDIF()
-  SET(GAME_SRCS ${GAME_SRCS} src/core/hqx/hqx.c)
-  SET(GAME_HEADERS ${GAME_HEADERS} src/core/hqx/hqx.h)
-ENDIF()
 
 # ------------------------------------------
 # Creating the executable
 # ------------------------------------------
 
-# A5 build
-IF(USE_A5)
+IF(WIN32)
 
-  IF(WIN32)
-
-    # Windows executable
-    IF(MINGW)
-      IF(NOT CMAKE_RC_COMPILER)
-        SET(CMAKE_RC_COMPILER windres)
-      ENDIF(NOT CMAKE_RC_COMPILER)
-      ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS})
-      TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LALLEGRO5})
-      TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall")
-      EXECUTE_PROCESS(COMMAND ${CMAKE_RC_COMPILER} -O coff -o "${CMAKE_CURRENT_BINARY_DIR}/iconwin.res" -i "${CMAKE_SOURCE_DIR}/src/misc/iconwin.rc" -I "${CMAKE_SOURCE_DIR}")
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++ \"${CMAKE_CURRENT_BINARY_DIR}/iconwin.res\"")
-    ELSEIF(MSVC)
-      ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS} ${GAME_HEADERS})
-      TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} ${LSURGESCRIPT} ${LALLEGRO5})
-      TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "/D_CRT_SECURE_NO_DEPRECATE /D_CRT_SECURE_NO_WARNINGS ${CMAKE_C_FLAGS}")
-    ELSE()
-      MESSAGE("*** Unrecognized compiler ***") # e.g., clang?
-      ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS})
-      TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LALLEGRO5})
-      TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall")     
-    ENDIF()
-
-    # Bugfix
-    IF(ALLEGRO_STATIC)
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES LINKER_LANGUAGE CXX)
-    ENDIF()
-
-  ELSEIF(APPLE)
-
-    # OSX executable
-    ADD_EXECUTABLE(${GAME_UNIXNAME} MACOSX_BUNDLE ${GAME_SRCS})
-    TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LALLEGRO5})
-    TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
+  # Windows executable
+  IF(MINGW)
+    IF(NOT CMAKE_RC_COMPILER)
+      SET(CMAKE_RC_COMPILER windres)
+    ENDIF(NOT CMAKE_RC_COMPILER)
+    ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS})
+    TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LPHYSFS} ${LALLEGRO5})
+    TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCDIR} ${PHYSFS_INCDIR} ${ALLEGRO_INCDIR})
     SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall")
-
-  ELSEIF(UNIX)
-
-    # *nix executable
-    ADD_EXECUTABLE(${GAME_UNIXNAME} ${GAME_SRCS})
-    TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LALLEGRO5})
-    TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall")
-
+    EXECUTE_PROCESS(COMMAND ${CMAKE_RC_COMPILER} -O coff -o "${CMAKE_CURRENT_BINARY_DIR}/opensurge.res" -i "${CMAKE_CURRENT_BINARY_DIR}/src/misc/opensurge.rc" -I "${CMAKE_CURRENT_SOURCE_DIR}/src/misc")
+    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++ \"${CMAKE_CURRENT_BINARY_DIR}/opensurge.res\"")
+  ELSEIF(MSVC)
+    ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS} ${GAME_HEADERS})
+    TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} ${LSURGESCRIPT} ${LPHYSFS} ${LALLEGRO5})
+    TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCDIR} ${PHYSFS_INCDIR} ${ALLEGRO_INCDIR})
+    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "/D_CRT_SECURE_NO_DEPRECATE /D_CRT_SECURE_NO_WARNINGS ${CMAKE_C_FLAGS}")
+  ELSE()
+    MESSAGE("*** Unrecognized compiler ***") # e.g., clang?
+    ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS})
+    TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LPHYSFS} ${LALLEGRO5})
+    TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCDIR} ${PHYSFS_INCDIR} ${ALLEGRO_INCDIR})
+    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall")     
   ENDIF()
 
-ELSE()
-
-  IF(UNIX)
-
-    # *nix executable (A4)
-    ADD_EXECUTABLE(${GAME_UNIXNAME} ${GAME_SRCS})
-    EXECUTE_PROCESS(COMMAND allegro-config --libs OUTPUT_VARIABLE ALLEGRO_UNIX_LIBS)
-    IF(ALLEGRO_UNIX_LIBS)
-      STRING(REGEX REPLACE "[ \r\n\t]+$" "" ALLEGRO_UNIX_LIBS ${ALLEGRO_UNIX_LIBS})
-    ELSE()
-      MESSAGE(FATAL_ERROR "Couldn't run \"allegro-config --libs\"")
-    ENDIF()
-    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES LINK_FLAGS ${ALLEGRO_UNIX_LIBS})
-    TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${AUDIO_LIBS} ${LSURGESCRIPT} ${LJPGALLEG} ${LLOADPNG} ${LPNG} ${LZ} ${LALFONT} ${LALLEG})
-    TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall -O2 ${CMAKE_C_FLAGS}")
-
-  ELSEIF(WIN32)
-
-    # Windows executable (A4)
-    IF(MSVC)
-      ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS} ${GAME_HEADERS})
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "/D_CRT_SECURE_NO_DEPRECATE /D__WIN32__ /D__MSVC__ ${CMAKE_C_FLAGS}")
-      TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} ${AUDIO_LIBS} ${LSURGESCRIPT} ${LJPGALLEG} ${LLOADPNG} ${LALFONT} ${LALLEG} ${LPNG} ${LZ})
-      TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-    ELSEIF(MINGW)
-      ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS})
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall -O2 -D__WIN32__ ${CMAKE_C_FLAGS}")
-      TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} ${AUDIO_LIBS} ${LSURGESCRIPT} ${LJPGALLEG} ${LLOADPNG} ${LALFONT} ${LALLEG} ${LPNG} ${LZ} m)
-      TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-      IF(NOT CMAKE_RC_COMPILER)
-        SET(CMAKE_RC_COMPILER windres)
-      ENDIF()
-      EXECUTE_PROCESS(COMMAND ${CMAKE_RC_COMPILER} -O coff -o "${CMAKE_CURRENT_BINARY_DIR}/iconwin.res" -i "${CMAKE_SOURCE_DIR}/src/misc/iconwin.rc" -I "${CMAKE_SOURCE_DIR}")
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES LINK_FLAGS "-static-libgcc \"${CMAKE_CURRENT_BINARY_DIR}/iconwin.res\"")
-    ELSE()
-      ADD_EXECUTABLE(${GAME_UNIXNAME} WIN32 ${GAME_SRCS})
-      SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-D__WIN32__ ${CMAKE_C_FLAGS}")
-      TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} ${AUDIO_LIBS} ${LSURGESCRIPT} ${LJPGALLEG} ${LLOADPNG} ${LALFONT} ${LALLEG} ${LPNG} ${LZ} m)
-      TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCLUDE_PATH} ${ALLEGRO_INCLUDE_PATH})
-    ENDIF()
-
+  # Bugfix
+  IF(ALLEGRO_STATIC)
+    SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES LINKER_LANGUAGE CXX)
   ENDIF()
+
+ELSEIF(UNIX)
+
+  # *nix executable
+  ADD_EXECUTABLE(${GAME_UNIXNAME} ${GAME_SRCS})
+  TARGET_LINK_LIBRARIES(${GAME_UNIXNAME} m ${LSURGESCRIPT} ${LPHYSFS} ${LALLEGRO5})
+  TARGET_INCLUDE_DIRECTORIES(${GAME_UNIXNAME} PUBLIC ${SURGESCRIPT_INCDIR} ${PHYSFS_INCDIR} ${ALLEGRO_INCDIR})
+  SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES COMPILE_FLAGS "-Wall")
 
 ENDIF()
 
+# Use relative paths in __FILE__ (reproducible builds)
+IF(NOT MSVC)
+  TARGET_COMPILE_OPTIONS(${GAME_UNIXNAME} PUBLIC "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+ENDIF()
+
+# Our #define's
+TARGET_COMPILE_DEFINITIONS(${GAME_UNIXNAME} PUBLIC ${DEFS})
+
 # Target properties
-SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES PROJECT_NAME "${GAME_NAME}")
+SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES PROJECT_LABEL "${GAME_NAME}")
 SET_TARGET_PROPERTIES(${GAME_UNIXNAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Installing on *nix
 IF(UNIX)
   INSTALL(CODE "MESSAGE(\"Installing ${GAME_NAME} ${GAME_VERSION}... Make sure that you have the appropriate privileges.\")")
-  INSTALL(TARGETS "${GAME_UNIXNAME}" RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}")
-  INSTALL(FILES LICENSE README.md logo.png surge.png surge.rocks DESTINATION "${GAME_DATADIR}")
-  INSTALL(DIRECTORY characters scripts sprites config images levels musics quests samples scripts themes languages fonts DESTINATION "${GAME_DATADIR}" PATTERN ".git" EXCLUDE)
+  INSTALL(FILES LICENSE README.md CHANGES.md CONTRIBUTING.md logo.png surge.png surge.rocks surge.cfg DESTINATION "${GAME_DATADIR}")
+  INSTALL(DIRECTORY characters scripts sprites images levels musics quests samples themes languages fonts inputs licenses DESTINATION "${GAME_DATADIR}" PATTERN ".git" EXCLUDE)
+  INSTALL(FILES src/misc/opensurge.png DESTINATION "${DESKTOP_ICON_PATH}")
+  INSTALL(FILES "${CMAKE_CURRENT_BINARY_DIR}/src/misc/opensurge.appdata.xml" DESTINATION "${DESKTOP_METAINFO_PATH}")
   IF(DESKTOP_INSTALL)
-    INSTALL(FILES src/misc/opensurge.desktop DESTINATION "${DESKTOP_ENTRY_PATH}")
-    INSTALL(FILES src/misc/opensurge.png DESTINATION "${DESKTOP_ICON_PATH}")
+    INSTALL(FILES "${CMAKE_CURRENT_BINARY_DIR}/src/misc/opensurge.desktop" DESTINATION "${DESKTOP_ENTRY_PATH}")
   ENDIF()
-  INSTALL(CODE "MESSAGE(\"Installed ${GAME_UNIXNAME} to ${CMAKE_INSTALL_PREFIX}. You may now start the game.\")")
+  INSTALL(TARGETS "${GAME_UNIXNAME}" RUNTIME DESTINATION "${GAME_BINDIR}")
+
+  # Success!
+  IF(IS_ABSOLUTE "${GAME_BINDIR}")
+    INSTALL(CODE "MESSAGE(\"Installed ${GAME_UNIXNAME} to ${GAME_BINDIR}.\")")
+  ELSE()
+    INSTALL(CODE "MESSAGE(\"Installed ${GAME_UNIXNAME} to ${CMAKE_INSTALL_PREFIX}/${GAME_BINDIR}.\")")
+  ENDIF()
 ENDIF()

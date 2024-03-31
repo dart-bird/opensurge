@@ -5,19 +5,8 @@ font "dialogbox"
 {
     truetype
     {
-        source_file             "fonts/Ubuntu-M.ttf"
+        source_file             "fonts/Roboto-Medium.ttf"
         size                    14
-        shadow
-        antialias
-    }
-}
-
-font "dialogbox" for "ko_KR"
-{
-    truetype
-    {
-        source_file             "fonts/GothicA1-Medium.ttf"
-        size                    10
         shadow
         antialias
     }

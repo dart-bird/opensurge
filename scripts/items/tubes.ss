@@ -6,19 +6,22 @@
 // -----------------------------------------------------------------------------
 using SurgeEngine.Level;
 using SurgeEngine.Player;
+using SurgeEngine.Audio.Sound;
 using SurgeEngine.Collisions.CollisionBox;
 
 // Tube Out unlocks the player
 object "Tube Out" is "entity", "special"
 {
     tube = spawn("Tube");
+    sfx = Sound("samples/tube.wav");
     maxSpeed = 960;
+    boostSpeed = 600;
 
     fun onTubeCollision(player)
     {
         // cap the speed when entering the tube
         if(player.input.enabled)
-            player.speed = Math.clamp(player.speed, -maxSpeed, maxSpeed);
+            player.gsp = Math.clamp(player.gsp, -maxSpeed, maxSpeed);
 
         // tube logic
         if(player.rolling) {
@@ -28,9 +31,39 @@ object "Tube Out" is "entity", "special"
             player.input.enabled = !player.input.enabled;
         }
         else {
-            // walking?
+            // walking at the entrance of the tube?
             player.input.enabled = true;
         }
+
+        // roll
+        if(!player.rolling) {
+            sfx.play();
+            player.roll();
+        }
+    }
+
+    fun onTubeOverlap(player)
+    {
+        // do nothing if the player is midair
+        if(player.midair)
+            return;
+
+        // boost the player
+        if(isOutsideTheTube(player))
+            boost(player);
+    }
+
+    fun isOutsideTheTube(player)
+    {
+        return (player.child("Tube - Player Watcher") == null);
+    }
+
+    fun boost(player)
+    {
+        if(player.gsp >= 0)
+            player.gsp = Math.max(boostSpeed, player.gsp);
+        else
+            player.gsp = Math.min(-boostSpeed, player.gsp);
     }
 }
 
@@ -38,51 +71,70 @@ object "Tube Out" is "entity", "special"
 object "Tube In" is "entity", "special"
 {
     tube = spawn("Tube");
+    refs = [];
 
     fun onTubeCollision(player)
     {
+        // disable input
         player.input.enabled = false;
+
+        // spawn the watcher
+        if(player.child("Tube - Player Watcher") == null) {
+            watcher = player.spawn("Tube - Player Watcher");
+            refs.push(watcher);
+        }
+    }
+
+    fun onTubeOverlap(player)
+    {
     }
 }
 
-// Tube rolls the player
+// Base class
 object "Tube" is "private", "special", "entity"
 {
-    public rollSpeed = 600;
     collider = CollisionBox(32, 32);
-    player = null;
-
-    state "main"
-    {
-    }
-
-    state "roll"
-    {
-        player.roll();
-        state = "main";
-    }
 
     fun onCollision(otherCollider)
     {
         if(otherCollider.entity.hasTag("player")) {
             player = otherCollider.entity;
-            if(shouldBoost(player))
-                boost(player);
-            parent.onTubeCollision(player);
-            state = "roll";
+            if(!player.frozen)
+                parent.onTubeCollision(player);
         }
     }
 
-    fun boost(player)
+    fun onOverlap(otherCollider)
     {
-        if(player.speed >= 0)
-            player.speed = Math.max(rollSpeed, player.speed);
-        else
-            player.speed = Math.min(-rollSpeed, player.speed);
+        if(otherCollider.entity.hasTag("player")) {
+            player = otherCollider.entity;
+            if(!player.frozen)
+                parent.onTubeOverlap(player);
+        }
     }
+}
 
-    fun shouldBoost(player)
+// An object that watches the player while inside the tube
+object "Tube - Player Watcher" is "special", "companion"
+{
+    player = parent;
+    pushSpeed = 300;
+    pushThreshold = 60;
+
+    state "main"
     {
-        return player.ysp >= 0;
+        // prevent soft lock by giving the player a little push if needed
+        if(Math.abs(player.gsp) < pushThreshold)
+            player.gsp = pushSpeed * Math.sign(player.gsp);
+
+        // the player is out of the tube: we're done
+        // (or we froze it with some other script)
+        if(player.input.enabled || player.frozen)
+            destroy();
+
+        // the player may get unrolled if he or she falls inside the tube
+        else if(!player.rolling)
+            player.roll();
+
     }
 }

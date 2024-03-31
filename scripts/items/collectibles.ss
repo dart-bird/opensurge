@@ -35,11 +35,11 @@ object "Base Collectible" is "private", "entity"
 
     fun pickup(player)
     {
-        if(state != "disappearing") {
+        if(state != "disappearing" && !player.dying) {
             player.collectibles += value;
             sfx.play();
             actor.anim = 1;
-            actor.zindex = 0.51;
+            actor.zindex = 0.5001;
             state = "disappearing";
         }
     }
@@ -94,7 +94,7 @@ object "Collectible" is "entity", "basic"
     state "main"
     {
         // magnetism check
-        for(i = 0; i < Player.count; i++) {
+        for(i = Player.count - 1; i >= 0; i--) {
             if(shouldMagnetize(Player[i]))
                 magnetize(Player[i]);
         }
@@ -107,7 +107,8 @@ object "Collectible" is "entity", "basic"
 
         // compute speed
         ds = transform.position.directionTo(target.transform.position);
-        sx = Math.sign(ds.x); sy = Math.sign(ds.y);
+        sx = Math.sign(ds.x);
+        sy = Math.sign(ds.y);
         xsp += 600 * ((sx == Math.sign(xsp)) ? 1 : -4) * sx * dt;
         ysp += 600 * ((sy == Math.sign(ysp)) ? 1 : -4) * sy * dt;
 
@@ -121,8 +122,10 @@ object "Collectible" is "entity", "basic"
 
     fun onCollision(otherCollider)
     {
-        if(otherCollider.entity.hasTag("player"))
-            base.pickup(otherCollider.entity);
+        if(otherCollider.entity.hasTag("player")) {
+            player = otherCollider.entity;
+            base.pickup(player);
+        }
     }
 
     fun shouldMagnetize(player)
@@ -154,6 +157,7 @@ object "Bouncing Collectible" is "entity", "disposable", "private"
     hlock = 0.0; vlock = 0.0;
     xsp = 0.0; ysp = 0.0;
     startTime = Time.time;
+    timeToLive = 5.0; // in seconds
 
     state "main"
     {
@@ -187,7 +191,7 @@ object "Bouncing Collectible" is "entity", "disposable", "private"
         transform.translateBy(xsp * dt, ysp * dt);
         
         // timeout
-        if(timeout(5.0))
+        if(timeout(timeToLive))
             destroy();
     }
 
@@ -199,7 +203,8 @@ object "Bouncing Collectible" is "entity", "disposable", "private"
     {
         if(Time.time >= startTime + 1.0) {
             if(otherCollider.entity.hasTag("player")) {
-                base.pickup(otherCollider.entity);
+                player = otherCollider.entity;
+                base.pickup(player);
                 state = "stopped";
             }
         }
@@ -226,36 +231,72 @@ object "Lucky Collectible" is "private", "entity", "awake"
 {
     base = spawn("Base Collectible");
     transform = Transform();
-    radius = Screen.width * 0.6;
+    radius = Math.max(Screen.width, Screen.height) * 0.6;
     luckyPlayer = Player.active;
     phase = 0;
     t = 0;
 
     state "main"
     {
+        // group these lucky collectibles in the render queue
+        base.zindex = 1.00123;
+
+        // setup spiral movement
+        playerPos = luckyPlayer.transform.position;
+        transform.position = Vector2(
+            radius * -Math.cos(phase) + playerPos.x,
+            radius * -Math.sin(phase) + playerPos.y
+        );
+
+        // start movement
+        state = "moving";
+    }
+
+    state "moving"
+    {
+        // advance the timer
+        t += Time.delta;
+
         // collision check
         if(t >= 1) {
             base.pickup(luckyPlayer);
             state = "done";
-            return;
         }
 
-        // spiral movement
-        transform.position = Vector2(
-            (radius * (1 - t)) * -Math.cos(6.283 * t + phase),
-            (radius * (1 - t)) * -Math.sin(6.283 * t + phase)
-        ).plus(luckyPlayer.transform.position);
-        t += Time.delta;
+        // stop if player is killed
+        else if(luckyPlayer.dying) {
+            state = "done";
+        }
     }
 
     state "done"
     {
+        // destroy if the player is ressurrected
+        if(!luckyPlayer.dying)
+            destroy();
     }
 
-    fun constructor()
+
+    fun move(prevPos, playerPos)
     {
-        base.zindex = 1.0;
+        // spiral movement
+        r = radius * (1 - t);
+        w = 6.2832 * t + phase;
+        x = r * -Math.cos(w) + playerPos.x;
+        y = r * -Math.sin(w) + playerPos.y;
+
+        dx = x - prevPos.x;
+        dy = y - prevPos.y;
+        transform.translateBy(dx, dy);
     }
+
+    fun lateUpdate()
+    {
+        if(state == "moving")
+            move(transform.position, luckyPlayer.transform.position);
+    }
+
+
 
 
 

@@ -53,6 +53,7 @@ object "Platformer" is "behavior"
     public readonly entity = parent; // the entity associated with this behavior
     speed = 120; // speed in px/s
     public jumpSpeed = 400; // px/s
+    grvmul = 1.0; // gravity multiplier
     xsp = 0;
     ysp = 0;
     topxsp = 360;
@@ -92,7 +93,8 @@ object "Platformer" is "behavior"
 
         // gravity
         if(sensors.midair) {
-            ysp += Level.gravity * dt;
+            grv = Level.gravity * grvmul;
+            ysp += grv * dt;
             if(ysp > topysp)
                 ysp = topysp;
         }
@@ -227,6 +229,22 @@ object "Platformer" is "behavior"
         return this;
     }
 
+    // show the internal sensors
+    fun showSensors()
+    {
+        if(sensors != null)
+            sensors.visible = true;
+        return this;
+    }
+
+    // hide the internal sensors
+    fun hideSensors()
+    {
+        if(sensors != null)
+            sensors.visible = true;
+        return this;
+    }
+
     // --- PROPERTIES ---
 
     // enable/disable movement
@@ -255,6 +273,17 @@ object "Platformer" is "behavior"
             walkRight();
         else if(xsp < 0)
             walkLeft();
+    }
+
+    // get/set gravity multiplier
+    fun get_gravityMultiplier()
+    {
+        return grvmul;
+    }
+
+    fun set_gravityMultiplier(multiplier)
+    {
+        grvmul = Math.max(0, multiplier);
     }
 
     // direction is +1 if the platformer is facing

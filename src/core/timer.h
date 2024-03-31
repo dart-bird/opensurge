@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
- * timer.h - time handler
- * Copyright (C) 2010, 2012  Alexandre Martins <alemartf@gmail.com>
+ * timer.h - time manager
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,13 @@ void timer_release();
 
 /* main utilities */
 float timer_get_delta();
-uint32_t timer_get_ticks();
+float timer_get_smooth_delta();
+double timer_get_elapsed();
+double timer_get_now();
+int64_t timer_get_frames();
+
+/* pause & resume */
+void timer_pause();
+void timer_resume();
 
 #endif

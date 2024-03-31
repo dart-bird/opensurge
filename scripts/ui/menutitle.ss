@@ -14,7 +14,7 @@ object "MenuTitle" is "private", "entity", "awake"
 {
     public readonly transform = Transform();
     actor = Actor("MenuButton");
-    label = Text("GoodNeighborsLarge");
+    label = Text("MenuButton");
 
     state "main"
     {

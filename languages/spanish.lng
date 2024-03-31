@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // File: languages/spanish.lng
-// Description: spanish translation (encoding: utf-8)
-// Author: Álvaro Bazán (SynfigMaster91)
+// Description: spanish translation (encoding: UTF-8)
+// Author: Álvaro Bazán (SynfigMaster91 / reaperplayer91)
 // License: MIT
 // -----------------------------------------------------------------------------
 
@@ -11,20 +11,21 @@
 //
 
 // Translation metadata
+// (use the English alphabet)
 LANG_ID                     "es_ES"                   // language code & country according to ISO 639-1 & ISO 3166-1, respectively
 LANG_NAME                   "Español"                 // language name
 LANG_AUTHOR                 "Álvaro Bazán"            // translation author
-LANG_LASTUPDATE             "2019-11-27"              // date format: yyyy-mm-dd
-LANG_COMPATIBILITY          "0.5.0"                   // required engine version
+LANG_LASTUPDATE             "2024-03-12"              // date format: yyyy-mm-dd
+LANG_COMPATIBILITY          "0.6.1"                   // required engine version
 
-// Colors
-COLOR_TITLE                 "ff8800"
-COLOR_HIGHLIGHT             "ffee11"
-COLOR_HUD                   "ffff00"
-COLOR_HUDDANGER             "ff0000"
+
+
 
 //
-// Note to translators:
+// Translators:
+//
+// Before starting your work, please check out the
+// Translation Guide at http://wiki.opensurge2d.org
 //
 // You don't need to translate everything exactly "as is".
 // You may use some "cool" slang that kids use, provided
@@ -32,10 +33,28 @@ COLOR_HUDDANGER             "ff0000"
 // you're translating is preserved!
 //
 // After translating, please make sure you test everything.
-// In the options screen, highlight "Stage select", press
-// right 3 times and enter. You'll see all .lev files.
+// All texts should fit within their graphical boundaries.
+// To help you with the testing, use the developer mode.
+//
+// Developer mode: when seeing the Open Surge Engine splash
+// screen, press RIGHT 3 times and enter. You'll see a list
+// of all level files.
 //
 
+//
+// Updating translations:
+//
+// New strings get added from time to time. They are marked
+// as FIXME. To find them, use the Find tool in your editor.
+// Found something? Please search for it now.
+//
+// If you find that mark anywhere in the file, it means that
+// the translation needs to be updated. Please submit a patch
+// to keep it up to date.
+//
+// After translating the new strings, make sure to remove
+// that mark.
+//
 
 
 //
@@ -43,75 +62,159 @@ COLOR_HUDDANGER             "ff0000"
 //
 
 // Options
-OPTIONS_TITLE               "<color=$COLOR_TITLE>OPCIONES</color>"
-OPTIONS_YES                 "SÍ"
-OPTIONS_NO                  "NO"
-OPTIONS_GRAPHICS            "GRÁFICOS"
+OPTIONS_TITLE               "OPCIONES"
+OPTIONS_GRAPHICS            "Gráficos"
+OPTIONS_CONTROLS            "Controles"
+OPTIONS_GAME                "Juego"
+OPTIONS_ENGINE              "Engine"
+OPTIONS_MODS                "MODs"
+OPTIONS_AUDIO               "Audio"
+OPTIONS_BACK                "Atrás"
+OPTIONS_YES                 "Sí"
+OPTIONS_NO                  "No"
+OPTIONS_ON                  "On" // alternatively: Enabled
+OPTIONS_OFF                 "Off" // alternatively: Disabled
 OPTIONS_FULLSCREEN          "Pantalla Completa"
 OPTIONS_RESOLUTION          "Tamaño de pantalla"
-OPTIONS_RESOLUTION_OPT1     "1X"
-OPTIONS_RESOLUTION_OPT2     "2X"
-OPTIONS_RESOLUTION_OPT3     "3X"
-OPTIONS_RESOLUTION_OPT4     "4X"
-OPTIONS_SMOOTHGFX           "Gráficos suaves"
-OPTIONS_SMOOTHGFX_ERROR     "[32 bpp solo]"
+OPTIONS_QUALITY             "Calidad"
+OPTIONS_QUALITY_LOW         "Baja"
+OPTIONS_QUALITY_MEDIUM      "Media"
+OPTIONS_QUALITY_HIGH        "Alta"
 OPTIONS_FPS                 "Mostrar FPS"
-OPTIONS_GAME                "JUEGO"
+OPTIONS_VSYNC               "V-Sync" // meaning: vertical synchronization
+OPTIONS_PIXELSCALER         "Escalador de píxeles"
+OPTIONS_COMINGSOON          "¡Próximamente!"
+OPTIONS_VOLUME              "Volumen"
+OPTIONS_MUTE                "Silenciado"
+OPTIONS_GAMEPADOPACITY      "Opacidad"
 OPTIONS_GAMEPAD             "Usar gamepad"
-OPTIONS_LANGUAGE            "Cambiar idioma"
+OPTIONS_LANGUAGE            "Idioma"
 OPTIONS_STAGESELECT         "Seleccionar escenario"
+OPTIONS_DEVELOPERMODE       "Modo Desarrollador"
 OPTIONS_CREDITS             "Créditos de Open Surge"
+OPTIONS_WEBSITE             "Visita Open Surge en la web"
 OPTIONS_DONATE              "Donar a Open Surge"
-OPTIONS_BACK                "VOLVER"
+OPTIONS_ABOUT               "Sobre el motor"
+OPTIONS_SHARE               "Compartir el motor"
+OPTIONS_DOWNLOAD_DESKTOP    "Consigue el motor para ordenadores de sobremesa"
+OPTIONS_DOWNLOAD_MOBILE     "Consigue el motor para móbiles"
+OPTIONS_PLAYMOD             "Jugar a un juego"
+OPTIONS_PLAYMOD_NOTAGAME    "¡El objeto seleccionado no es un juego Open Surge!"
+OPTIONS_PLAYMOD_LEGACYERROR "Los juegos Legacy Open Surge no son compatibles."
+OPTIONS_PLAYMOD_COMPATWARN  "El modo de compatibilidad es una función diseñada para mejorar tu experiencia de juego. ¿Estás seguro de que quieres desactivarlo?"
+OPTIONS_MODSTORAGE          "Almacenamiento"
+OPTIONS_MODSTORAGE_FOLDER   "Carpeta" // alternatively: Directorio
+OPTIONS_MODSTORAGE_ARCHIVE  "Archivo .zip"
+OPTIONS_COMPATIBILITYMODE   "Modo compatibilidad"
+OPTIONS_SUBMITFEEDBACK      "Enviar comentario"
+OPTIONS_WRITEREVIEW         "Escribir un análisis"
+OPTIONS_RATEAPP             "Evaluar la aplicación"
+OPTIONS_REPORTISSUE         "Informar de un problema"
+OPTIONS_BACKTOBASEGAME      "Volver al juego base"
 
 // Stage Select
-STAGESELECT_TITLE           "<color=$COLOR_TITLE>SELECCIÓN DE NIVEL</color>"
-STAGESELECT_DEBUG           "<color=$COLOR_TITLE>MODO DESARROLLADOR</color>"
+STAGESELECT_TITLE           "SELECCIÓN DE NIVEL"
+STAGESELECT_DEBUG           "MODO DESARROLLADOR"
 STAGESELECT_MSG             "Pulsa <color=$COLOR_HIGHLIGHT>$INPUT_FIRE4</color> para volver"
 STAGESELECT_PAGE            "página $1/$2"
 STAGESELECT_ACT             "Zona"
 
-// Quest Select
-QUESTSELECT_TITLE           "<color=$COLOR_TITLE>SELECCIÓN DE QUEST</color>"
-QUESTSELECT_MSG             "Pulsa <color=$COLOR_HIGHLIGHT>$INPUT_FIRE4</color> para volver"
-QUESTSELECT_PAGE            "página $1/$2"
-QUESTSELECT_INFO            "<color=$COLOR_HIGHLIGHT>Versión:</color> $1\n<color=$COLOR_HIGHLIGHT>Autor:</color> $2\n<color=$COLOR_HIGHLIGHT>Descripción:</color> $3"
-
 // Credits
-CREDITS_TITLE               "<color=$COLOR_TITLE>CRÉDITOS</color>"
+CREDITS_TITLE               "CRÉDITOS"
 CREDITS_BACK                "Pulsa <color=$COLOR_HIGHLIGHT>$INPUT_FIRE4</color> para volver"
-CREDITS_HEADER              "<color=$COLOR_HIGHLIGHT>$GAME_NAME versión $GAME_VERSION</color>\npotenciado por $ENGINE_NAME\n$ENGINE_WEBSITE"
+CREDITS_HEADER              "<color=$COLOR_HIGHLIGHT>$ENGINE_NAME versión $ENGINE_VERSION</color>\npotenciado por $ENGINE_NAME\n$ENGINE_WEBSITE"
 CREDITS_ACTIVE              "<color=$COLOR_HIGHLIGHT>Gente</color>"
+CREDITS_RETIRED             "<color=$COLOR_HIGHLIGHT>Miembros pasados</color>"
 CREDITS_THANKS              "<color=$COLOR_HIGHLIGHT>Agradecimientos a</color>"
-CREDITS_ALEXANDRE           "Lider y Fundador del Proyecto\nDesarrollador del Proyecto"
-CREDITS_JOAO                "Artista"
+CREDITS_ALEXANDRE           "Líder de proyecto y fundador\nDesarrollador de proyecto\nArtista"
+CREDITS_JOAO                "Artista\nIlustrador"
 CREDITS_MATEUS              "Efectos de sonido"
-CREDITS_CODY                "Bocetos"
+CREDITS_CODY                "Artista conceptual\nDiseñador de enemigos"
 CREDITS_JOHAN               "Músico (descansa en paz, amigo)"
 CREDITS_DI                  "Músico"
 CREDITS_VICTOR              "Músico"
+CREDITS_M374LX              "Músico"
 CREDITS_COLIN               "Sprites, primera historia"
 CREDITS_BRIAN               "Artista de Sprites"
 CREDITS_TRANSLATOR          "Traductor"
+CREDITS_TRANSLATORS         "<color=$COLOR_HIGHLIGHT>Traductores</color>"
+CREDITS_PASTTRANSLATORS     "<color=$COLOR_HIGHLIGHT>Traductores pasados</color>"
 CREDITS_RES_TITLE           "<color=$COLOR_HIGHLIGHT>Créditos por recursos individuales</color>"
-CREDITS_RES_TEXT            "Al menos que se especifique lo contrario, los archivos listados abajo están licenciados bajo la licencia de Creative Commons Reconocimiento 3.0 (CC-BY 3.0)."
+CREDITS_RES_TEXT            "Los archivos que se enumeran a continuación están todos bajo licencias libres. Se presentan sus respectivos autores:"
 CREDITS_RES_IMAGES          "<color=$COLOR_HIGHLIGHT>Imágenes</color>"
 CREDITS_RES_MUSICS          "<color=$COLOR_HIGHLIGHT>Música</color>"
 CREDITS_RES_SAMPLES         "<color=$COLOR_HIGHLIGHT>Efectos de Sonido</color>"
 CREDITS_RES_SCRIPTS         "<color=$COLOR_HIGHLIGHT>Scripts</color>"
+CREDITS_RES_FONTS           "<color=$COLOR_HIGHLIGHT>Fuentes</color>"
+CREDITS_RES_LEVELS          "<color=$COLOR_HIGHLIGHT>Niveles</color>"
+CREDITS_RES_TRANSLATIONS    "<color=$COLOR_HIGHLIGHT>Traducciones</color>"
 CREDITS_RES_SCRIPTS_TEXT    "Los autores están identificados dentro de los propios scripts."
 
-// Main Menu
-MAINMENU_DEVBUILD           "Versión de Desarrollo"
-MAINMENU_VERSION            "v." // abbreviated
+// Title Screen
+TITLESCREEN_PLAY            "EMPEZAR PARTIDA"
+TITLESCREEN_OPTIONS         "OPCIONES"
+TITLESCREEN_MOBILE          "JUGAR EN MÓVIL"
+TITLESCREEN_SHARE           "COMPARTIR"
+TITLESCREEN_DONATE          "DONAR"
+TITLESCREEN_QUIT            "SALIR"
+TITLESCREEN_SUBMITFEEDBACK  "ENVIAR COMENTARIO"
+TITLESCREEN_WRITEREVIEW     "ESCRIBIR UN ANÁLISIS"
+TITLESCREEN_RATEAPP         "EVALUAR LA APLICACIÓN"
+TITLESCREEN_REPORTISSUE     "INFORMAR DE UN PROBLEMA"
+TITLESCREEN_VERSION         "SurgeEngine\n$ENGINE_VERSION" // bitmap font: no special characters are allowed
+TITLESCREEN_WEBSITE         "$ENGINE_WEBSITE" // bitmap font: no special characters are allowed
 
-// Create Menu
+// End of Demo
+ENDOFDEMO_CONTINUE          "CONTINUAR"
+ENDOFDEMO_VERSION           "DEMO $GAME_VERSION\n"
+ENDOFDEMO_TEXT              "¡Gracias por jugar! Surge the Rabbit está en desarrollo.\n\n¡Visita <color=$COLOR_HIGHLIGHT>$ENGINE_WEBSITE</color> para ver actualizaciones!\n\nAhora vamos a ver cómo tú también puedes crear tus propios juegos."
+
+// Rate the Game
+// Tip: the rating scene isn't displayed often, so delete file surge.prefs or uncomment ratingTime.forget() at scripts/setup/scenes/rate_game.ss to test it (levels/scenes/rate_game.lev)
+RATEGAME_TITLE              "¿Calificar Surge the Rabbit?"
+RATEGAME_MESSAGE            "¡Nos encantaría conocer tu opinión!\n¡Tus comentarios ayudan a este juego y motor de código abierto!" // 2 lines max.
+RATEGAME_YES                "¡Claro!"
+RATEGAME_NO                 "Ahora no"
+
+// Play classic levels
+PLAYCLASSICLEVELS_TEXT      "¿Jugar a los niveles clásicos?"
+PLAYCLASSICLEVELS_YES       "$OPTIONS_YES"
+PLAYCLASSICLEVELS_NO        "$OPTIONS_NO"
+
+// Thanks for playing
+THANKSFORPLAYING_TITLE      "¡Gracias por jugar!"
+THANKSFORPLAYING_PARAGRAPH1 "¡Apoya este trabajo independiente! ¡Consigue la edición oficial del motor para dispositivos móviles!"
+THANKSFORPLAYING_PARAGRAPH2 "¡Juega a Surge the Rabbit - y también a tus propios juegos - en tu teléfono y tablet!"
+THANKSFORPLAYING_PARAGRAPH3 "¡Apoya hoy mismo este motor de juegos de código abierto!"
+THANKSFORPLAYING_YES        "¡Claro!"
+THANKSFORPLAYING_NO         "Ahora no"
+
+// (legacy) Main Menu
+MAINMENU_TITLE              "MENU"
+MAINMENU_PLAY               "JUGAR"
+MAINMENU_CREATE             "CREAR"
+MAINMENU_SHARE              "COMPARTIR"
+MAINMENU_OPTIONS            "OPCIONES"
+MAINMENU_QUIT               "SALIR"
+MAINMENU_DEVBUILD           "Versión de Desarrollo"
+MAINMENU_VERSION            "v. $ENGINE_VERSION" // abbreviated
+
+// (legacy) Create Menu
 // Note: when translating CREATEMENU_TEXT, make sure the text fits the screen! (6 lines max)
+CREATEMENU_TITLE            "CREAR"
+CREATEMENU_PLAY             "JUGAR DEMO"
+CREATEMENU_LEARN            "APRENDER"
+CREATEMENU_SCRIPTING        "SURGESCRIPT"
+CREATEMENU_BACK             "VOLVER"
 CREATEMENU_TEXT             "¡Open Surge te permite crear tus propios juegos increibles! ¡Desata tu creatividad! ¡Que fluya tu creatividad!\n\n¡Empieza tu propio proyecto! ¡Crea nuevos niveles, objectos, especiales, personajes y más! ¡Prueba el editor de niveles, domina el motor y sumergete en SurgeScript para el máximo poder!"
 
-// Congratulations Screen
+// (legacy) Congratulations Screen
 // Note: when translating CONGRATULATIONS_TEXT, make sure the text fits the screen! (6 lines max)
-CONGRATULATIONS_TEXT        "Gracias por jugar a Open Surge versión $GAME_VERSION. ¿Quieres jugar más? ¡Ve a $GAME_WEBSITE para actualizaciones!\n\nOpen Surge te permite jugar y crear tus propios juegos. Esta desarrollado por gente como tú. ¡Comparte la alegria! ¡Cuentaselo a tu familia, amigos y mascotas y que corra la voz!"
+CONGRATULATIONS_TITLE       "GRACIAS POR JUGAR"
+CONGRATULATIONS_SHARE       "COMPARTIR"
+CONGRATULATIONS_DONATE      "DONAR"
+CONGRALUTATIONS_BACK        "VOLVER"
+CONGRATULATIONS_TEXT        "Gracias por jugar a Open Surge versión $ENGINE_VERSION. ¿Quieres jugar más? ¡Ve a $ENGINE_WEBSITE para actualizaciones!\n\nOpen Surge te permite jugar y crear tus propios juegos. Está desarrollado por gente como tú. ¡Comparte la alegria! ¡Cuentaselo a tu familia, amigos y mascotas y que corra la voz!"
 
 
 
@@ -129,10 +232,10 @@ INPUT_KEYB_FIRE1            "ESPACIO"
 INPUT_KEYB_FIRE2            "CTRL IZQUIERDO"
 INPUT_KEYB_FIRE3            "ENTER"
 INPUT_KEYB_FIRE4            "ESC"
-INPUT_KEYB_FIRE5            "W"
-INPUT_KEYB_FIRE6            "A"
-INPUT_KEYB_FIRE7            "S"
-INPUT_KEYB_FIRE8            "D"
+INPUT_KEYB_FIRE5            "tecla SHIFT IZQUIERDA"
+INPUT_KEYB_FIRE6            "tecla SHIFT DERECHA"
+INPUT_KEYB_FIRE7            "<disponible>"
+INPUT_KEYB_FIRE8            "<disponible>"
 
 // joystick
 INPUT_JOY_DIRECTIONAL       "las DIRECCIONES"
@@ -140,14 +243,14 @@ INPUT_JOY_LEFT              "el BOTÓN IZQUIERDO"
 INPUT_JOY_RIGHT             "el BOTÓN DERECHO"
 INPUT_JOY_UP                "el BOTÓN ARRIBA"
 INPUT_JOY_DOWN              "el BOTÓN ABAJO"
-INPUT_JOY_FIRE1             "BOTÓN 1"
-INPUT_JOY_FIRE2             "BOTÓN 2"
-INPUT_JOY_FIRE3             "BOTÓN 3"
-INPUT_JOY_FIRE4             "BOTÓN 4"
-INPUT_JOY_FIRE5             "BOTÓN 5"
-INPUT_JOY_FIRE6             "BOTÓN 6"
-INPUT_JOY_FIRE7             "BOTÓN 7"
-INPUT_JOY_FIRE8             "BOTÓN 8"
+INPUT_JOY_FIRE1             "el BOTÓN DE ACCIÓN"
+INPUT_JOY_FIRE2             "el BOTÓN SECUNDARIO"
+INPUT_JOY_FIRE3             "PAUSA"
+INPUT_JOY_FIRE4             "VOLVER"
+INPUT_JOY_FIRE5             "L1"
+INPUT_JOY_FIRE6             "R1"
+INPUT_JOY_FIRE7             "<available>"
+INPUT_JOY_FIRE8             "<available>"
 
 
 
@@ -160,6 +263,9 @@ QUIT_QUESTION               "¿SEGURO QUE QUIERES SALIR?"
 QUIT_OPTION1                "SÍ"
 QUIT_OPTION2                "NO"
 
+// Loading Screen
+LOADING_TEXT                "Cargando..."
+
 
 
 //
@@ -167,11 +273,112 @@ QUIT_OPTION2                "NO"
 //
 
 // Demo Level
-LEV_DEMO_1                  "<color=$COLOR_TITLE>Cómo jugar:</color> ¡Bienvenido al <color=$COLOR_HIGHLIGHT>nivel demo de Open Surge</color>! Usa $INPUT_DIRECTIONAL para moverte y $INPUT_FIRE1 para saltar. Usa $INPUT_FIRE2 cambiar de personaje."
+LEV_DEMO_1                  "<color=$COLOR_TITLE>¡Crea tus increíbles juegos!</color>\n¡Este juego está creado con <color=$COLOR_HIGHLIGHT>Open Surge</color>, un motor de juegos 2D muy flexible y de código abierto que ahora está en tus manos!"
 LEV_DEMO_2                  "<color=$COLOR_TITLE>¿Sabías que...?</color> Todo en Open Surge es personalizable. Puedes hacer niveles, objectos, jefes, personajes y más! Es un completo <color=$COLOR_HIGHLIGHT>sistema de creación de juegos</color>."
-LEV_DEMO_3                  "<color=$COLOR_TITLE>¡Desata tu creatividad!</color>\nUna de las funciones en Open Surge es <color=$COLOR_HIGHLIGHT>SurgeScript</color>. ¡Es scripting para juegos! ¡Usalo para construir lo que te puedas imaginar!"
-LEV_DEMO_4                  "<color=$COLOR_TITLE>¡Guay!</color>\n¿Aún estas excitado? ¡El cielo es el limite! Visita <color=$COLOR_HIGHLIGHT>$GAME_WEBSITE</color> para crear tus propios juegos alucinantes hoy!"
+LEV_DEMO_3                  "<color=$COLOR_TITLE>¡Desata tu creatividad!</color>\nUna de las funciones en Open Surge es <color=$COLOR_HIGHLIGHT>SurgeScript</color>. ¡Es scripting para juegos! ¡Úsalo para construir lo que te puedas imaginar!"
+LEV_DEMO_4                  "<color=$COLOR_TITLE>¡Guay!</color>\n¿Emocionado todavía? ¡El cielo es el limite! Visita <color=$COLOR_HIGHLIGHT>$ENGINE_WEBSITE</color> para crear tus propios juegos alucinantes hoy!"
 LEV_DEMO_5                  "<color=$COLOR_TITLE>¡Pruebalo tú mismo!</color> ¡Ahora te toca a tí! <color=$COLOR_HIGHLIGHT>Pulsa F12 para abrir el editor</color>. Después, abre la paleta de objetos y empieza a construir tu nivel! (usa F1 para ayuda)"
+LEV_DEMO_5_MOBILE           "<color=$COLOR_TITLE>¡Pruebalo tú mismo!</color>\n¡Ahora te toca a tí! Pausa el juego, arrastra el tirador de la parte inferior de la pantalla y entra en el <color=$COLOR_HIGHLIGHT>MODO DEBUG</color> para <color=$COLOR_HIGHLIGHT>editar el nivel</color>!"
+
+
+
+//
+// Section: level editor
+//
+
+// Main UI
+EDITOR_UI_HELP              "<color=$COLOR_EDITOR_HIGHLIGHT>F1</color>: ayuda"
+EDITOR_UI_TOOL              "<color=$COLOR_EDITOR_HIGHLIGHT>$1</color> $2"
+EDITOR_UI_BRICK             "ladrillo"
+EDITOR_UI_GROUP             "grupo"
+EDITOR_UI_ENTITY            "entidad"
+EDITOR_UI_LEGACYITEM        "elemento antiguo"
+EDITOR_UI_LEGACYOBJECT      "objecto antiguo"
+EDITOR_UI_MISSING           "<no está>"
+
+// Bricks - scenery elements
+// Translators: please keep the names below succint. See the comments for their meaning.
+EDITOR_BRICK_TYPE_SOLID     "SOLIDO"     // a solid brick (you can't get inside them)
+EDITOR_BRICK_TYPE_CLOUD     "NUBE"     // "jump-through" platforms (you can step on top of them)
+EDITOR_BRICK_TYPE_PASSABLE  "PASABLE"  // a brick with no effect on collisions (decorative elements)
+EDITOR_BRICK_TYPE_UNKNOWN   "DESCONOCIDO"
+
+EDITOR_BRICK_BEHAVIOR_DEFAULT    "ESTÁNDAR"   // a brick that stands still
+EDITOR_BRICK_BEHAVIOR_CIRCULAR   "CIRCULAR"  // circular motion / elliptic orbit
+EDITOR_BRICK_BEHAVIOR_PENDULAR   "PENDULAR"  // a brick with pendular motion
+EDITOR_BRICK_BEHAVIOR_BREAKABLE  "ROMPIBLE" // breakable when rolling and colliding with it
+EDITOR_BRICK_BEHAVIOR_SMASHABLE  "MACHACABLE" // will break when the player jumps on top of it
+EDITOR_BRICK_BEHAVIOR_FALL       "CAYENTE"      // falls as soon as the player steps on it
+EDITOR_BRICK_BEHAVIOR_FLOAT      "FLOTANTE"     // a floating platform
+EDITOR_BRICK_BEHAVIOR_MARKER     "MARCADOR"    // special brick only rendered in the editor
+EDITOR_BRICK_BEHAVIOR_UNKNOWN    "DESCONOCIDO"
+
+EDITOR_BRICK_FLIP_NOFLIP    "sin voltear"            // the brick is not flipped (this is the default)
+EDITOR_BRICK_FLIP_HFLIP     "volteado horizontalmente" // flip horizontally
+EDITOR_BRICK_FLIP_VFLIP     "volteado verticalmente"   // flip vertically
+EDITOR_BRICK_FLIP_VHFLIP    "girado a 180º"      // flip horizontally & vertically
+
+// Palette
+EDITOR_PALETTE_BRICK        "ladrillo"
+EDITOR_PALETTE_MISSING      "no está"
+EDITOR_PALETTE_EMPTY        "Elemento no encontrado. Pulsa <color=$COLOR_EDITOR_HIGHLIGHT>$EDITOR_INPUT_ESC</color> para volver."
+
+// Help screen
+EDITOR_HELP_GENERAL         "<color=$COLOR_EDITOR_HIGHLIGHT>General</color>"
+EDITOR_HELP_ITEMS           "<color=$COLOR_EDITOR_HIGHLIGHT>Colocación del objeto</color>"
+EDITOR_HELP_LAYERS          "<color=$COLOR_EDITOR_HIGHLIGHT>Sistema de capas</color>"
+EDITOR_HELP_BACK            "Pulsa <color=$COLOR_EDITOR_HIGHLIGHT>$EDITOR_INPUT_ESC</color> para volver."
+EDITOR_HELP_TINYWINDOW      "No hay suficiente espacio para mostrar la referencia del comando. Aumenta el tamaño de la ventana en la pantalla de opciones.\n\nPulsa <color=$COLOR_EDITOR_HIGHLIGHT>$EDITOR_INPUT_ESC</color> para volver."
+EDITOR_HELP_LAYERSTUTORIAL  "El jugador cambiará de capa tocando los objetos L Verdes/Amarillos (ver la paleta)\nEl objeto L Verde habilita la capa verde y deshabilita la capa amarilla\nEl objeto L Amarillo habilita la capa amarilla y deshabilita la capa verde\nPresiona la tecla L para cambiar la capa en la que colocarás los ladrillos\nLa capa verde aparece delante de la capa amarilla."
+
+EDITOR_HELP_CMD_RETURN      "Volver al juego"
+EDITOR_HELP_CMD_PALETTE     "Abrir paleta de objetos"
+EDITOR_HELP_CMD_SAVE        "Guardar el nivel"
+EDITOR_HELP_CMD_RELOAD      "Cargar el nivel"
+EDITOR_HELP_CMD_MOVE        "Mover la cámara"
+EDITOR_HELP_CMD_MOVEFASTER  "Mover la cámara (más rápido)"
+EDITOR_HELP_CMD_UNDO        "Deshacer"
+EDITOR_HELP_CMD_REDO        "Rehacer"
+EDITOR_HELP_CMD_HELP        "Mostrar ayuda"
+EDITOR_HELP_CMD_GRID        "Encajar a la cuadricula"
+EDITOR_HELP_CMD_MASKS       "Mostrar máscaras de colisión"
+EDITOR_HELP_CMD_PUTITEM     "Poner objeto"
+EDITOR_HELP_CMD_PICKITEM    "Elegir objeto"
+EDITOR_HELP_CMD_DELETEITEM  "Borrar objeto (mantener: borrador)"
+EDITOR_HELP_CMD_CHANGEITEM  "Cambiar objeto"
+EDITOR_HELP_CMD_CHANGETYPE  "Cambiar tipo de objeto"
+EDITOR_HELP_CMD_WATERLEVEL  "Cambiar el nivel del agua"
+EDITOR_HELP_CMD_SPAWNPOINT  "Cambiar el punto de generación"
+EDITOR_HELP_CMD_BRICKLAYER  "Cambiar la capa de ladrillos"
+EDITOR_HELP_CMD_FLIPBRICK   "Voltear el ladrillo actual"
+
+// Input keys
+EDITOR_INPUT_ARROWS         "Teclas de Dirección"
+EDITOR_INPUT_SHIFT          "Shift" // Shift key
+EDITOR_INPUT_CTRL           "Ctrl"  // Ctrl key
+EDITOR_INPUT_ESC            "ESC"   // ESC key
+EDITOR_INPUT_LEFTCLICK      "Botón izquierdo del ratón"
+EDITOR_INPUT_RIGHTCLICK     "Botón derecho del ratón"
+EDITOR_INPUT_MIDDLECLICK    "Botón medio del ratón"
+EDITOR_INPUT_MOUSEWHEEL     "Rueda del ratón"
+
+// Confirm boxes
+EDITOR_CONFIRM_RELOAD       "¿Recargar el nivel?"
+EDITOR_CONFIRM_YES          "SÍ"
+EDITOR_CONFIRM_NO           "No"
+
+// Messages
+EDITOR_MESSAGE_WELCOME      "¡Bienvenido al Editor de Niveles!"
+EDITOR_MESSAGE_SAVED        "Guardado a <color=$COLOR_EDITOR_HIGHLIGHT>$1</color>"
+EDITOR_MESSAGE_SAVEERROR    "No se puede guardar el nivel. Por favor, revisa los registros."
+EDITOR_MESSAGE_RELOADED     "El nivel ha sido recargado"
+EDITOR_MESSAGE_UNDOERROR    "Ya en el cambio más antiguo"
+EDITOR_MESSAGE_REDOERROR    "Ya en el cambio más reciente"
+EDITOR_MESSAGE_SNAP2GRIDON  "Ajustar a la cuadrícula: usando una cuadrícula de $1 × $2"
+EDITOR_MESSAGE_SNAP2GRIDOFF "Ajustar a la cuadrícula: deshabilitado"
+EDITOR_MESSAGE_DEFAULTLAYER "Cambiado a la capa <color=$1>estándar</color>"
+EDITOR_MESSAGE_GREENLAYER   "Cambiado a la capa <color=$1>verde</color>"
+EDITOR_MESSAGE_YELLOWLAYER  "Cambiado a la capa <color=$1>amarilla</color>"
 
 
 
@@ -180,13 +387,10 @@ LEV_DEMO_5                  "<color=$COLOR_TITLE>¡Pruebalo tú mismo!</color> �
 //
 
 //
-// Note to translators:
+// Translators:
 //
-// Since the game uses bitmap fonts, parts of
-// the translation don't accept special characters.
-//
-// This section does not accept language-specific
-// special characters.
+// This section accepts SOME language-specific
+// special characters. Please test as necessary.
 //
 // If a translation is not possible, you may
 // leave the following sentences in English.
@@ -198,7 +402,7 @@ LEV_DEMO_5                  "<color=$COLOR_TITLE>¡Pruebalo tú mismo!</color> �
 // Heads-Up Display
 HUD_SCORE                   "Puntos"
 HUD_TIME                    "Tiempo"
-HUD_COLLECTIBLES            "Energia"
+HUD_POWER                   "Energia"
 
 // Level Cleared animation
 CLEARED_LINE1               "HAS TERMINADO"
@@ -207,26 +411,16 @@ CLEARED_POWER               "Bonus de Energia"
 CLEARED_TIME                "Bonus de Tiempo"
 CLEARED_SCORE               "Puntos"
 
-// Main Menu
-MAINMENU_TITLE              "MENU"
-MAINMENU_PLAY               "JUGAR"
-MAINMENU_CREATE             "CREAR"
-MAINMENU_SHARE              "COMPARTIR"
-MAINMENU_OPTIONS            "OPCIONES"
-MAINMENU_QUIT               "SALIR"
+// Game Over
+GAMEOVER_PART1              "FIN DEL"
+GAMEOVER_PART2              "JUEGO"
 
-// Create Menu
-CREATEMENU_TITLE            "CREAR"
-CREATEMENU_PLAY             "JUGAR DEMO"
-CREATEMENU_LEARN            "APRENDER"
-CREATEMENU_SCRIPTING        "SURGESCRIPT"
-CREATEMENU_BACK             "VOLVER"
+// Time Over
+TIMEOVER_PART1              "FIN DE"
+TIMEOVER_PART2              "TIEMPO"
 
-// Congratulations Screen
-CONGRATULATIONS_TITLE       "GRACIAS POR JUGAR"
-CONGRATULATIONS_SHARE       "COMPARTIR"
-CONGRATULATIONS_DONATE      "DONAR"
-CONGRALUTATIONS_BACK        "VOLVER"
-
-// Loading Screen
-LOADING_TEXT                "Cargando..."
+// Pause Menu
+PAUSE_TITLE                 "PAUSA"
+PAUSE_CONTINUE              "CONTINUAR"
+PAUSE_RESTART               "REINICIAR"
+PAUSE_EXIT                  "SALIR"

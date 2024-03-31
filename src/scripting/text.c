@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * prefs.c - scripting system: UI Text
- * Copyright (C) 2018  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -22,18 +22,22 @@
 #include <string.h>
 #include <math.h>
 #include "scripting.h"
-#include "../core/font.h"
-#include "../core/util.h"
 #include "../core/video.h"
-#include "../core/stringutil.h"
+#include "../core/font.h"
+#include "../core/image.h"
+#include "../util/util.h"
+#include "../util/stringutil.h"
 #include "../entities/camera.h"
 
 /* private */
 static surgescript_var_t* fun_constructor(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_destructor(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_main(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
+static surgescript_var_t* fun_onrender(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
+static surgescript_var_t* fun_getfilepathofrenderable(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
+static surgescript_var_t* fun_gettexturehandle(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
+static surgescript_var_t* fun_getistranslucent(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_init(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
-static surgescript_var_t* fun_render(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_getfont(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_gettext(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_settext(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
@@ -49,6 +53,7 @@ static surgescript_var_t* fun_getzindex(surgescript_object_t* object, const surg
 static surgescript_var_t* fun_setzindex(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_getoffset(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static surgescript_var_t* fun_setoffset(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
+static surgescript_var_t* fun_getsize(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
 static const surgescript_heapptr_t FONT_ADDR = 0;
 static const surgescript_heapptr_t TEXT_ADDR = 1;
 static const surgescript_heapptr_t ALIGN_ADDR = 2;
@@ -57,6 +62,7 @@ static const surgescript_heapptr_t VISIBLE_ADDR = 4;
 static const surgescript_heapptr_t DETACHED_ADDR = 5;
 static const surgescript_heapptr_t OFFSET_ADDR = 6;
 static const surgescript_heapptr_t MAXWIDTH_ADDR = 7;
+static const surgescript_heapptr_t SIZE_ADDR = 8;
 static const char* DEFAULT_TEXT = "";
 static const char* DEFAULT_FONT = "default";
 static const char* DEFAULT_ALIGN = "left";
@@ -73,11 +79,15 @@ static inline const char* align2str(fontalign_t align);
  */
 void scripting_register_text(surgescript_vm_t* vm)
 {
+    /* tags */
+    surgescript_tagsystem_t* tag_system = surgescript_vm_tagsystem(vm);
+    surgescript_tagsystem_add_tag(tag_system, "Text", "renderable");
+
+    /* methods */
     surgescript_vm_bind(vm, "Text", "state:main", fun_main, 0);
     surgescript_vm_bind(vm, "Text", "constructor", fun_constructor, 0);
     surgescript_vm_bind(vm, "Text", "destructor", fun_destructor, 0);
     surgescript_vm_bind(vm, "Text", "__init", fun_init, 1);
-    surgescript_vm_bind(vm, "Text", "render", fun_render, 0);
     surgescript_vm_bind(vm, "Text", "set_zindex", fun_setzindex, 1);
     surgescript_vm_bind(vm, "Text", "get_zindex", fun_getzindex, 0);
     surgescript_vm_bind(vm, "Text", "get_font", fun_getfont, 0);
@@ -89,10 +99,15 @@ void scripting_register_text(surgescript_vm_t* vm)
     surgescript_vm_bind(vm, "Text", "get_visible", fun_getvisible, 0);
     surgescript_vm_bind(vm, "Text", "set_maxWidth", fun_setmaxwidth, 1);
     surgescript_vm_bind(vm, "Text", "get_maxWidth", fun_getmaxwidth, 0);
-    surgescript_vm_bind(vm, "Text", "set_maxlength", fun_setmaxlength, 1);
-    surgescript_vm_bind(vm, "Text", "get_maxlength", fun_getmaxlength, 0);
+    surgescript_vm_bind(vm, "Text", "set_maxLength", fun_setmaxlength, 1);
+    surgescript_vm_bind(vm, "Text", "get_maxLength", fun_getmaxlength, 0);
     surgescript_vm_bind(vm, "Text", "get_offset", fun_getoffset, 0);
     surgescript_vm_bind(vm, "Text", "set_offset", fun_setoffset, 1);
+    surgescript_vm_bind(vm, "Text", "get_size", fun_getsize, 0);
+    surgescript_vm_bind(vm, "Text", "onRender", fun_onrender, 2);
+    surgescript_vm_bind(vm, "Text", "get___filepathOfRenderable", fun_getfilepathofrenderable, 0);
+    surgescript_vm_bind(vm, "Text", "get___textureHandle", fun_gettexturehandle, 0);
+    surgescript_vm_bind(vm, "Text", "get___isTranslucent", fun_getistranslucent, 0);
 }
 
 /*
@@ -116,9 +131,6 @@ font_t* scripting_text_fontptr(const surgescript_object_t* object)
 /* main state */
 surgescript_var_t* fun_main(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
 {
-    font_t* font = get_font(object);
-    if(font != NULL)
-        font_set_position(font, scripting_util_world_position(object));
     return NULL;
 }
 
@@ -126,11 +138,9 @@ surgescript_var_t* fun_main(surgescript_object_t* object, const surgescript_var_
 surgescript_var_t* fun_constructor(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
 {
     surgescript_objectmanager_t* manager = surgescript_object_manager(object);
-    surgescript_objecthandle_t me = surgescript_object_handle(object);
-    surgescript_objecthandle_t offset = surgescript_objectmanager_spawn(manager, me, "Vector2", NULL);
     surgescript_objecthandle_t parent_handle = surgescript_object_parent(object); 
     surgescript_object_t* parent = surgescript_objectmanager_get(manager, parent_handle);
-    bool is_detached = surgescript_object_has_tag(parent, "detached");
+    bool is_detached = scripting_util_is_effectively_detached_entity(parent);
     surgescript_heap_t* heap = surgescript_object_heap(object);
 
     /* internal data */
@@ -142,14 +152,16 @@ surgescript_var_t* fun_constructor(surgescript_object_t* object, const surgescri
     ssassert(DETACHED_ADDR == surgescript_heap_malloc(heap));
     ssassert(OFFSET_ADDR == surgescript_heap_malloc(heap));
     ssassert(MAXWIDTH_ADDR == surgescript_heap_malloc(heap));
+    ssassert(SIZE_ADDR == surgescript_heap_malloc(heap));
     surgescript_var_set_null(surgescript_heap_at(heap, FONT_ADDR));
     surgescript_var_set_string(surgescript_heap_at(heap, TEXT_ADDR), DEFAULT_TEXT);
     surgescript_var_set_string(surgescript_heap_at(heap, ALIGN_ADDR), DEFAULT_ALIGN);
     surgescript_var_set_number(surgescript_heap_at(heap, ZINDEX_ADDR), DEFAULT_ZINDEX);
     surgescript_var_set_bool(surgescript_heap_at(heap, VISIBLE_ADDR), DEFAULT_VISIBILITY);
-    surgescript_var_set_objecthandle(surgescript_heap_at(heap, OFFSET_ADDR), offset);
+    surgescript_var_set_null(surgescript_heap_at(heap, OFFSET_ADDR)); /* lazy allocation */
     surgescript_var_set_bool(surgescript_heap_at(heap, DETACHED_ADDR), is_detached);
     surgescript_var_set_number(surgescript_heap_at(heap, MAXWIDTH_ADDR), DEFAULT_MAXWIDTH);
+    surgescript_var_set_null(surgescript_heap_at(heap, SIZE_ADDR)); /* lazy allocation */
 
     /* sanity check */
     if(!surgescript_object_has_tag(parent, "entity")) {
@@ -196,16 +208,67 @@ surgescript_var_t* fun_init(surgescript_object_t* object, const surgescript_var_
 }
 
 /* render */
-surgescript_var_t* fun_render(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
+surgescript_var_t* fun_onrender(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
 {
     font_t* font = get_font(object);
+    double camera_x = surgescript_var_get_number(param[0]);
+    double camera_y = surgescript_var_get_number(param[1]);
+    v2d_t camera = v2d_new(camera_x, camera_y);
+
     if(font != NULL) {
-        surgescript_heap_t* heap = surgescript_object_heap(object);
+        const surgescript_heap_t* heap = surgescript_object_heap(object);
         bool is_detached = surgescript_var_get_bool(surgescript_heap_at(heap, DETACHED_ADDR));
-        v2d_t camera = !is_detached ? camera_get_position() : v2d_new(VIDEO_SCREEN_W / 2, VIDEO_SCREEN_H / 2);
+        if(is_detached)
+            camera = v2d_multiply(video_get_screen_size(), 0.5f);
+
+        font_set_position(font, scripting_util_world_position(object));
         font_render(font, camera);
     }
+
     return NULL;
+}
+
+/* the filepath of this renderable (used by the render queue) */
+surgescript_var_t* fun_getfilepathofrenderable(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
+{
+    const font_t* font = get_font(object);
+
+    /* this should happen only before calling __init() */
+    if(font == NULL)
+        return surgescript_var_set_string(surgescript_var_create(), "");
+
+    const char* filepath = font_get_filepath(font);
+    return surgescript_var_set_string(surgescript_var_create(), filepath);
+}
+
+/* the texture handle of this renderable (used by the render queue) */
+surgescript_var_t* fun_gettexturehandle(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
+{
+    const font_t* font = get_font(object);
+
+    /* is the font valid? */
+    if(font != NULL) {
+        const image_t* image = font_get_image(font);
+
+        /* is this a bitmap font? */
+        if(image != NULL) {
+            texturehandle_t tex = image_texture(image);
+            return surgescript_var_set_rawbits(surgescript_var_create(), tex);
+        }
+    }
+
+    return surgescript_var_set_null(surgescript_var_create());
+}
+
+/* is this renderable translucent? (used by the render queue) */
+surgescript_var_t* fun_getistranslucent(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
+{
+    /* we'll consider this renderable to be translucent if it's not a bitmap font,
+       e.g., a TrueType font (there is likely some antialiasing taking place...) */
+    const font_t* font = get_font(object);
+    bool is_translucent = (font != NULL) && (font_get_image(font) == NULL);
+
+    return surgescript_var_set_bool(surgescript_var_create(), is_translucent);
 }
 
 /* set zindex */
@@ -237,17 +300,26 @@ surgescript_var_t* fun_settext(surgescript_object_t* object, const surgescript_v
     font_t* font = get_font(object);
     if(font != NULL) {
         surgescript_heap_t* heap = surgescript_object_heap(object);
+        const char* prev_text = surgescript_var_fast_get_string(surgescript_heap_at(heap, TEXT_ADDR));
         const char* str = surgescript_var_fast_get_string(param[0]);
         if(*str == 0) {
-            surgescript_objectmanager_t* manager = surgescript_object_manager(object);
+            /* convert non-string to string */
+            const surgescript_objectmanager_t* manager = surgescript_object_manager(object);
             char* text = surgescript_var_get_string(param[0], manager);
-            font_set_text(font, "%s", text);
+
+            if(0 != strcmp(text, prev_text)) /* basic speedup */
+                font_set_text(font, "%s", text);
+
             surgescript_var_set_string(surgescript_heap_at(heap, TEXT_ADDR), text);
             ssfree(text);
         }
         else {
+            /* the input is already a string */
             const char* text = str;
-            font_set_text(font, "%s", text);
+
+            if(0 != strcmp(text, prev_text)) /* basic speedup */
+                font_set_text(font, "%s", text);
+
             surgescript_var_set_string(surgescript_heap_at(heap, TEXT_ADDR), text);
         }
     }
@@ -324,14 +396,28 @@ surgescript_var_t* fun_getvisible(surgescript_object_t* object, const surgescrip
 /* get offset */
 surgescript_var_t* fun_getoffset(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
 {
-    surgescript_transform_t* transform = surgescript_object_transform(object);
     surgescript_objectmanager_t* manager = surgescript_object_manager(object);
     surgescript_heap_t* heap = surgescript_object_heap(object);
-    surgescript_objecthandle_t handle = surgescript_var_get_objecthandle(surgescript_heap_at(heap, OFFSET_ADDR));
+    surgescript_var_t* v2ptr = surgescript_heap_at(heap, OFFSET_ADDR);
+    surgescript_objecthandle_t handle;
+
+    /* lazy allocation */
+    if(surgescript_var_is_null(v2ptr)) {
+        surgescript_objecthandle_t me = surgescript_object_handle(object);
+        handle = surgescript_objectmanager_spawn(manager, me, "Vector2", NULL);
+        surgescript_var_set_objecthandle(v2ptr, handle);
+    }
+    else
+        handle = surgescript_var_get_objecthandle(v2ptr);
+
+    /* read transform */
+    surgescript_transform_t* transform = surgescript_object_transform(object);
+    float x, y;
+    surgescript_transform_getposition2d(transform, &x, &y);
+
+    /* get offset */
     surgescript_object_t* v2 = surgescript_objectmanager_get(manager, handle);
-
-    scripting_vector2_update(v2, transform->position.x, transform->position.y);
-
+    scripting_vector2_update(v2, x, y);
     return surgescript_var_set_objecthandle(surgescript_var_create(), handle);
 }
 
@@ -343,19 +429,21 @@ surgescript_var_t* fun_setoffset(surgescript_object_t* object, const surgescript
     surgescript_objecthandle_t v2h = surgescript_var_get_objecthandle(param[0]);
     double x = 0.0, y = 0.0;
 
-    scripting_vector2_read(surgescript_objectmanager_get(manager, v2h), &x, &y);
-    transform->position.x = x;
-    transform->position.y = y;
+    surgescript_object_t* v2 = surgescript_objectmanager_get(manager, v2h);
+    scripting_vector2_read(v2, &x, &y);
+    surgescript_transform_setposition2d(transform, x, y);
 
     return NULL;
 }
 
+/* get maxLength */
 surgescript_var_t* fun_getmaxlength(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
 {
     font_t* font = get_font(object);
     return surgescript_var_set_number(surgescript_var_create(), font != NULL ? font_get_maxlength(font) : 0);
 }
 
+/* set maxLength */
 surgescript_var_t* fun_setmaxlength(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
 {
     font_t* font = get_font(object);
@@ -364,6 +452,31 @@ surgescript_var_t* fun_setmaxlength(surgescript_object_t* object, const surgescr
         font_set_maxlength(font, maxlength);
     }
     return NULL;
+}
+
+/* get size, in pixels */
+surgescript_var_t* fun_getsize(surgescript_object_t* object, const surgescript_var_t** param, int num_params)
+{
+    surgescript_objectmanager_t* manager = surgescript_object_manager(object);
+    surgescript_heap_t* heap = surgescript_object_heap(object);
+    surgescript_var_t* v2ptr = surgescript_heap_at(heap, SIZE_ADDR);
+    surgescript_objecthandle_t handle;
+    surgescript_object_t* v2;
+    font_t* font = get_font(object);
+    v2d_t size = font_get_textsize(font);
+
+    if(surgescript_var_is_null(v2ptr)) { /* lazy allocation */
+        surgescript_objecthandle_t me = surgescript_object_handle(object);
+        handle = surgescript_objectmanager_spawn(manager, me, "Vector2", NULL);
+        surgescript_var_set_objecthandle(v2ptr, handle);
+    }
+    else
+        handle = surgescript_var_get_objecthandle(v2ptr);
+
+    v2 = surgescript_objectmanager_get(manager, handle);
+    scripting_vector2_update(v2, size.x, size.y);
+
+    return surgescript_var_set_objecthandle(surgescript_var_create(), handle);
 }
 
 /* -- private -- */

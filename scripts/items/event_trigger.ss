@@ -22,9 +22,10 @@ using SurgeEngine.Collisions.CollisionBox;
 //
 // When an Event Trigger is touched, all other
 // objects belonging to the same group will no
-// longer be able to be triggered. Only the
+// longer be able to be triggered*. Only the
 // touched object will trigger the event. It
-// happens once, unless the level restarts.
+// happens once, unless the level restarts
+// (* unless you reactivate the group!)
 //
 // To define the specific events, you may use
 // a level setup script that runs on the level
@@ -45,6 +46,28 @@ using SurgeEngine.Collisions.CollisionBox;
 // when the player first touches a group 1
 // Event Trigger.
 //
+// If you want to reactivate an Event Trigger,
+// so that it can be triggered multiple times,
+// use a DelayedEvent in an EventList. Example:
+//
+// using SurgeEngine.Level;
+// using SurgeEngine.Events.EventList;
+// using SurgeEngine.Events.EntityEvent;
+// using SurgeEngine.Events.DelayedEvent;
+// using SurgeEngine.Events.FunctionEvent;
+//
+// /* in your setup script... */
+// Level.setup({
+//   "Event Trigger 1": {
+//     "onTrigger": EventList([
+//       FunctionEvent("Print").withArgument("Hello from Event!"),
+//       DelayedEvent(
+//         EntityEvent("Event Trigger 1").willCall("reactivate")
+//       ).willWait(2.0)
+//     ])
+//   }
+// });
+//
 
 // Event Trigger 1
 object "Event Trigger 1" is "entity", "special"
@@ -55,6 +78,11 @@ object "Event Trigger 1" is "entity", "special"
     fun trigger()
     {
         onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate(); // delegate
     }
 }
 
@@ -68,6 +96,11 @@ object "Event Trigger 2" is "entity", "special"
     {
         onTrigger();
     }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
 }
 
 // Event Trigger 3
@@ -79,6 +112,11 @@ object "Event Trigger 3" is "entity", "special"
     fun trigger()
     {
         onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
     }
 }
 
@@ -92,6 +130,11 @@ object "Event Trigger 4" is "entity", "special"
     {
         onTrigger();
     }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
 }
 
 // Event Trigger 5
@@ -103,6 +146,11 @@ object "Event Trigger 5" is "entity", "special"
     fun trigger()
     {
         onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
     }
 }
 
@@ -116,6 +164,11 @@ object "Event Trigger 6" is "entity", "special"
     {
         onTrigger();
     }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
 }
 
 // Event Trigger 7
@@ -128,6 +181,11 @@ object "Event Trigger 7" is "entity", "special"
     {
         onTrigger();
     }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
 }
 
 // Event Trigger 8
@@ -139,6 +197,147 @@ object "Event Trigger 8" is "entity", "special"
     fun trigger()
     {
         onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 9
+object "Event Trigger 9" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(9);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 10
+object "Event Trigger 10" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(10);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 11
+object "Event Trigger 11" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(11);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 12
+object "Event Trigger 12" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(12);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 13
+object "Event Trigger 13" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(13);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 14
+object "Event Trigger 14" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(14);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 15
+object "Event Trigger 15" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(15);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
+    }
+}
+
+// Event Trigger 16
+object "Event Trigger 16" is "entity", "special"
+{
+    public onTrigger = Event();
+    base = spawn("Event Trigger Base").setGroup(16);
+
+    fun trigger()
+    {
+        onTrigger();
+    }
+
+    fun reactivate()
+    {
+        base.reactivate();
     }
 }
 
@@ -160,6 +359,11 @@ object "Event Trigger Base" is "private", "entity", "special"
         return this;
     }
 
+    fun reactivate()
+    {
+        manager.reactivate(group);
+    }
+
     fun onCollision(otherCollider)
     {
         if(otherCollider.entity.hasTag("player") && !manager.triggered(group)) {
@@ -170,9 +374,15 @@ object "Event Trigger Base" is "private", "entity", "special"
     }
 }
 
-object "Event Trigger Manager" is "private", "awake", "entity"
+object "Event Trigger Manager"
 {
-    triggers = [ null, null, null, null, null, null, null, null, null ];
+    triggers = [
+        null, null, null, null,
+        null, null, null, null,
+        null, null, null, null,
+        null, null, null, null,
+        null
+    ];
 
     state "main"
     {
@@ -197,6 +407,12 @@ object "Event Trigger Manager" is "private", "awake", "entity"
     fun trigger(groupId, player)
     {
         if(groupId >= 0 && groupId < triggers.length)
-            triggers[groupId] = player.name;
+            triggers[groupId] = player.id;
+    }
+
+    fun reactivate(groupId)
+    {
+        if(groupId >= 0 && groupId < triggers.length)
+            triggers[groupId] = null;
     }
 }

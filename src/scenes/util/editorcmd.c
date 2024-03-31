@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * editorcmd.c - level editor: commands & hotkeys
- * Copyright (C) 2018  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -21,7 +21,7 @@
 #include <string.h>
 #include "editorcmd.h"
 #include "../../core/input.h"
-#include "../../core/util.h"
+#include "../../util/util.h"
 
 /* commands */
 typedef struct command_t command_t;
@@ -46,8 +46,10 @@ static const command_t command[] = {
     { "DOWN", "Shift+S" },
     { "LEFT", "Shift+Left" },
     { "LEFT", "Shift+A" },
+    { "enter-debug-mode", "Shift+F12" },
     { "enter", "F12" },
     { "quit", "F12" },
+    { "quit-alt", "ESC" },
     { "save", "Ctrl+S" },
     { "reload", "Ctrl+R" },
     { "put-item", "LeftClick" },
@@ -179,6 +181,8 @@ bool hotkey_is_triggered(const editorcmd_t* cmd, const char* hotkey)
         return input_button_pressed(cmd->keyboard[0], IB_FIRE7);
     else if(0 == strcmp(hotkey, "F12"))
         return input_button_pressed(cmd->keyboard[0], IB_FIRE8);
+    else if(0 == strcmp(hotkey, "ESC"))
+        return input_button_pressed(cmd->keyboard[0], IB_FIRE5);
     else if(0 == strcmp(hotkey, "LeftClick"))
         return input_button_pressed(cmd->mouse, IB_FIRE1);
     else if(0 == strcmp(hotkey, "RightClick"))
@@ -192,7 +196,7 @@ bool hotkey_is_triggered(const editorcmd_t* cmd, const char* hotkey)
     else if(0 == strcmp(hotkey, "HoldRightClick"))
         return input_button_down(cmd->mouse, IB_FIRE2);
     else switch(*hotkey) {
-        case 'S': return input_button_pressed(cmd->keyboard[0], IB_FIRE5);
+        case 'S': return input_button_pressed(cmd->keyboard[1], IB_DOWN);
         case 'R': return input_button_pressed(cmd->keyboard[0], IB_FIRE6);
         case '1': return input_button_pressed(cmd->keyboard[1], IB_FIRE1);
         case '2': return input_button_pressed(cmd->keyboard[1], IB_FIRE2);

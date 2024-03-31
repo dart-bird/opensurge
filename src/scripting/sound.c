@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * sound.c - scripting system: sound
- * Copyright (C) 2018  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -19,8 +19,8 @@
  */
 
 #include <surgescript.h>
-#include "../core/util.h"
 #include "../core/audio.h"
+#include "../util/util.h"
 
 /* private */
 static surgescript_var_t* fun_main(surgescript_object_t* object, const surgescript_var_t** param, int num_params);
@@ -162,7 +162,7 @@ surgescript_var_t* fun_setvolume(surgescript_object_t* object, const surgescript
     double volume = surgescript_var_get_number(param[0]);
     sound_t* sound = get_sound(object);
 
-    volume = clip(volume, 0.0, 1.0);
+    volume = clip01(volume);
     surgescript_var_set_number(surgescript_heap_at(heap, VOLUME_ADDR), volume);
     if(sound != NULL)
         sound_set_volume(sound, volume);

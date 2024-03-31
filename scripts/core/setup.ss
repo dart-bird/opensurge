@@ -7,6 +7,18 @@
 // License: MIT
 // -----------------------------------------------------------------------------
 using SurgeEngine.Player;
+using SurgeEngine.Level;
+
+
+// -----------------------------------------------------------------------------
+// ATTENTION
+//
+// "Default Setup" is considered obsolete since Open Surge 0.6.0. Its usage
+// is no longer recommended, but it has been kept for retro-compatibility.
+// Multiple setup objects are used for ease of customization (see the .lev
+// files for details)
+// -----------------------------------------------------------------------------
+
 
 //
 // Need to hack this?
@@ -17,33 +29,13 @@ object "Default Setup"
 {
     cam = spawn("Default Camera");
     switchController = spawn("Switch Controller");
-    pauseController = spawn("Pause and Quit");
+    pauseController = spawn("Default Pause and Quit");
     waterController = spawn("Water Controller");
     clearedAnim = spawn("Default Cleared Animation");
     openingAnim = spawn("Default Opening Animation");
-    hud = null;
-    player = null;
-
-    state "main"
-    {
-        player = Player.active;
-        player.input.enabled = false;
-        state = "wait";
-    }
-
-    // wait for the completion of the opening animation
-    state "wait"
-    {
-        if(timeout(3.0)) {
-            hud = spawn("Default HUD");
-            player.input.enabled = true;
-            state = "done";
-        }
-    }
-
-    state "done"
-    {
-    }
+    hud = spawn("Default HUD");
+    animalManager = Level.spawn("Animals");
+    collectiblesListener = spawn("Collectibles Listener").triggers("Give Extra Life").every(100);
 }
 
 //
@@ -54,10 +46,12 @@ object "Debug Setup"
 {
     cam = spawn("Default Camera");
     switchController = spawn("Switch Controller");
-    pauseController = spawn("Pause and Quit");
+    pauseController = spawn("Default Pause and Quit");
     waterController = spawn("Water Controller");
     clearedAnim = spawn("Default Cleared Animation");
     hud = spawn("Default HUD");
+    animalManager = Level.spawn("Animals");
+    collectiblesListener = spawn("Collectibles Listener").triggers("Give Extra Life").every(100);
 }
 
 // this is for retro-compatibility

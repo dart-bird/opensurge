@@ -4,6 +4,7 @@
 // Author: Alexandre Martins <http://opensurge2d.org>
 // License: MIT
 // -----------------------------------------------------------------------------
+using SurgeEngine;
 using SurgeEngine.Transform;
 using SurgeEngine.Player;
 using SurgeEngine.Vector2;
@@ -11,75 +12,113 @@ using SurgeEngine.Actor;
 using SurgeEngine.Level;
 using SurgeEngine.UI.Text;
 using SurgeEngine.Video.Screen;
+using SurgeEngine.Input.Mouse;
 
 object "Default HUD" is "entity", "detached", "awake", "private"
 {
+    public readonly transform = Transform();
     score = spawn("DefaultHUD.Score");
     timer = spawn("DefaultHUD.Time");
     collectibles = spawn("DefaultHUD.Collectibles");
     lives = spawn("DefaultHUD.Lives");
-    transform = Transform();
+    powerups = spawn("DefaultHUD.Powerups");
+    pause = spawn("DefaultHUD.PauseButton");
 
     state "main"
     {
-        if(Level.cleared)
+        transform.position = Vector2(16, 8);
+        state = "active";
+    }
+
+    state "active"
+    {
+        if(Level.cleared) {
+            timer.freeze();
             state = "cleared";
+        }
     }
 
     state "cleared"
     {
-        transform.translateBy(-Screen.width * Time.delta, 0);
+        if(!Level.cleared) {
+            timer.unfreeze();
+            state = "main";
+        }
+
+        //transform.translateBy(-Screen.width * Time.delta, 0);
     }
 
-    fun constructor()
+    // fake level clear
+    // prefer using Level.clear() instead
+    fun clear()
     {
-        transform.position = Vector2(16, 8);
-        score.transform.localPosition = Vector2.zero;
-        timer.transform.localPosition = Vector2(0, 16);
-        collectibles.transform.localPosition = Vector2(0, 32);
-        lives.transform.localPosition = Vector2(0, Screen.height - 29);
+        timer.freeze();
+    }
+
+    // base zindex for the components of the HUD
+    fun get_zindex()
+    {
+        return 1000.0;
     }
 }
 
 object "DefaultHUD.Score" is "entity", "detached", "awake", "private"
 {
-    public transform = Transform();
+    transform = Transform();
     label = Text("HUD");
     value = Text("HUD");
 
     state "main"
     {
-        label.text = "<color=ffee11>$HUD_SCORE</color>";
-        value.text = Player.active.score;
-    }
-
-    fun constructor()
-    {
-        label.zindex = value.zindex = 1000.0;
+        transform.localPosition = Vector2.zero;
+        label.zindex = value.zindex = parent.zindex;
         label.offset = Vector2(0, 0);
         value.offset = Vector2(56, 0);
+
+        state = "active";
+    }
+
+    state "active"
+    {
+        label.text = "<color=ffee11>$HUD_SCORE</color>";
+        value.text = Player.active.score;
     }
 }
 
 object "DefaultHUD.Time" is "entity", "detached", "awake", "private"
 {
-    public transform = Transform();
+    transform = Transform();
     label = Text("HUD");
     value = Text("HUD");
-    timer = 0.0;
 
     state "main"
     {
-        // update timer
-        timer += Time.delta;
+        transform.localPosition = Vector2(0, 16);
+        label.zindex = value.zindex = parent.zindex;
+        label.offset = Vector2(0, 0);
+        value.offset = Vector2(56, 0);
 
-        // update HUD
-        seconds = Math.floor(timer);
+        state = "active";
+    }
+
+    state "active"
+    {
+        time = Level.time;
+        if(time < 0.1) // apparently blocked on level start
+            time = 0.0;
+
+        seconds = Math.floor(time);
         minutes = Math.floor(seconds / 60);
         sec = Math.mod(seconds, 60);
-        dsec = Math.floor((timer - seconds) * 100);
+        dsec = Math.floor((time - seconds) * 100);
+
         value.text = minutes + "' " + pad(sec) + "\" " + pad(dsec);
         label.text = "<color=ffee11>$HUD_TIME</color>";
+    }
+
+    state "frozen"
+    {
+        // don't change the labels
     }
 
     fun pad(x)
@@ -87,27 +126,41 @@ object "DefaultHUD.Time" is "entity", "detached", "awake", "private"
         if(x < 10)
             return "0" + x;
         else
-            return x;
+            return "" + x;
     }
 
-    fun constructor()
+    fun freeze()
     {
-        label.zindex = value.zindex = 1000.0;
-        label.offset = Vector2(0, 0);
-        value.offset = Vector2(56, 0);
+        state = "frozen";
+    }
+
+    fun unfreeze()
+    {
+        if(state == "frozen")
+            state = "main";
     }
 }
 
 object "DefaultHUD.Collectibles" is "entity", "detached", "awake", "private"
 {
-    public transform = Transform();
+    transform = Transform();
     label = Text("HUD");
     value = Text("HUD");
     blinkTime = 0.35;
 
     state "main"
     {
-        label.text = "<color=ffee11>$HUD_COLLECTIBLES</color>";
+        transform.localPosition = Vector2(0, 32);
+        label.zindex = value.zindex = parent.zindex;
+        label.offset = Vector2(0, 0);
+        value.offset = Vector2(56, 0);
+
+        state = "active";
+    }
+
+    state "active"
+    {
+        label.text = "<color=ffee11>$HUD_POWER</color>";
         value.text = Player.active.collectibles;
         if(Player.active.collectibles == 0) {
             if(timeout(blinkTime))
@@ -117,40 +170,38 @@ object "DefaultHUD.Collectibles" is "entity", "detached", "awake", "private"
 
     state "blink"
     {
-        label.text = "<color=ff0055>$HUD_COLLECTIBLES</color>";
+        label.text = "<color=ff0055>$HUD_POWER</color>";
         value.text = Player.active.collectibles;
         if(timeout(blinkTime))
             state = "main";
-    }
-
-    fun constructor()
-    {
-        label.zindex = value.zindex = 1000.0;
-        label.offset = Vector2(0, 0);
-        value.offset = Vector2(56, 0);
     }
 }
 
 object "DefaultHUD.Lives" is "entity", "detached", "awake", "private"
 {
-    public transform = Transform();
+    transform = Transform();
     value = Text("HUD");
     icon = null;
     currentPlayer = null;
-    zindex = 1000;
 
     state "main"
+    {
+        value.zindex = parent.zindex;
+
+        transform.localPosition = Vector2(0, Screen.height - 29);
+        /*if(SurgeEngine.mobile)
+            transform.position = Vector2(Screen.width * 0.87, parent.transform.position.y);*/
+
+        state = "active";
+    }
+
+    state "active"
     {
         value.text = Player.active.lives;
         if(Player.active.name !== currentPlayer) {
             currentPlayer = Player.active.name;
             updateIcon(currentPlayer);
         }
-    }
-
-    fun constructor()
-    {
-        value.zindex = zindex;
     }
 
     fun updateIcon(playerName)
@@ -168,7 +219,213 @@ object "DefaultHUD.Lives" is "entity", "detached", "awake", "private"
 
         // adjust icon
         icon.offset = Vector2(9, 4);
-        icon.zindex = zindex;
+        icon.zindex = value.zindex;
         value.offset = Vector2(icon.width, 0);
+    }
+}
+
+object "DefaultHUD.Powerups" is "entity", "detached", "awake", "private"
+{
+    transform = Transform();
+    icons = [
+        spawn("DefaultHUD.Powerups.Icon").setIndex(0),
+        spawn("DefaultHUD.Powerups.Icon").setIndex(1),
+        spawn("DefaultHUD.Powerups.Icon").setIndex(2)
+    ];
+
+    state "main"
+    {
+        transform.position = Vector2(Screen.width - parent.transform.position.x, parent.transform.position.y);
+
+        if(SurgeEngine.mobile) {
+            offset = Vector2.left.scaledBy(Screen.width / 4);
+            transform.position = transform.position.plus(offset);
+        }
+
+        state = "active";
+    }
+
+    state "active"
+    {
+        player = Player.active;
+
+        // hide icons
+        icons[0].hide();
+        icons[1].hide();
+        icons[2].hide();
+
+        // show relevant icons
+        c = 0;
+        if(player.turbo)
+            icons[c++].show("turbo");
+        if(player.invincible)
+            icons[c++].show("invincible");
+        if(player.shield !== null)
+            icons[c++].show(player.shield);
+    }
+}
+
+object "DefaultHUD.Powerups.Icon" is "entity", "detached", "awake", "private"
+{
+    actor = Actor("Item Box Icon");
+    transform = Transform();
+    name2anim = {
+        "invincible": 5,
+        "turbo": 6,
+        "shield": 8,
+        "fire": 12,
+        "thunder": 13,
+        "water": 14,
+        "acid": 15,
+        "wind": 16
+    };
+
+    state "main"
+    {
+        actor.visible = false;
+        actor.zindex = parent.parent.zindex;
+
+        state = "active";
+    }
+
+    state "active"
+    {
+        if(Level.cleared)
+            hide();
+    }
+
+    fun setIndex(index)
+    {
+        dx = actor.width * (1 + index);
+        transform.localPosition = Vector2(-dx, 0).minus(actor.actionOffset);
+        return this;
+    }
+
+    fun show(iconName)
+    {
+        if(name2anim.has(iconName)) {
+            actor.anim = name2anim[iconName];
+            actor.visible = !Level.cleared;
+        }
+    }
+
+    fun hide()
+    {
+        actor.visible = false;
+    }
+}
+
+object "DefaultHUD.PauseButton" is "entity", "detached", "awake", "private"
+{
+    transform = Transform();
+    actor = Actor("Mobile Pause Button");
+    unpressed = 0;
+    pressed = 1;
+
+    state "main"
+    {
+        transform.position = Vector2(Screen.width * 0.87, parent.transform.position.y - actor.actionOffset.y);
+        actor.anim = unpressed;
+        actor.zindex = parent.zindex;
+
+        // display this pause button in mobile mode only
+        if(!SurgeEngine.mobile) {
+            actor.visible = false;
+            state = "sleep";
+        }
+        else {
+            actor.visible = true;
+            state = "unpressed";
+        }
+    }
+
+    state "unpressed"
+    {
+        // check if tapped
+        if(isTappingButton()) {
+            actor.anim = pressed;
+            state = "pressed";
+        }
+
+        // check if blocked
+        if(!canPause())
+            state = "blocked";
+    }
+
+    state "pressed"
+    {
+        // check if the game should be paused or
+        // if the button should just be released
+        if(!Mouse.buttonDown("left")) {
+            actor.anim = unpressed;
+            actor.visible = false;
+            state = "triggered";
+        }
+        else if(!isTappingButton()) {
+            actor.anim = unpressed;
+            state = "unpressed";
+        }
+
+        // check if blocked
+        if(!canPause())
+            state = "blocked";
+    }
+
+    state "triggered"
+    {
+        if(canPause())
+            Level.pause();
+
+        state = "paused";
+    }
+
+    state "paused"
+    {
+        actor.visible = true;
+        state = "unpressed";
+    }
+
+    state "blocked"
+    {
+        if(canPause()) {
+            actor.visible = true;
+            state = "unpressed";
+        }
+        else {
+            actor.visible = false;
+        }
+    }
+
+    state "sleep"
+    {
+        // do nothing
+    }
+
+    fun canPause()
+    {
+        return !Level.cleared && !Level.debugMode;
+    }
+
+    fun isTappingButton()
+    {
+        return Mouse.buttonDown("left") && isOverlappingButton(Mouse.position);
+    }
+
+    fun isOverlappingButton(target)
+    {
+        top = transform.position.y - actor.hotSpot.y;
+        dy = target.y - top;
+
+        // test collision on the y-axis
+        if(0 <= dy && dy < actor.height) {
+            left = transform.position.x - actor.hotSpot.x;
+            dx = target.x - left;
+
+            // test collision on the x-axis
+            if(0 <= dx && dx < actor.width)
+                return true;
+        }
+
+        return false;
     }
 }

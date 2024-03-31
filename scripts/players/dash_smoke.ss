@@ -42,7 +42,10 @@ object "Dash Smoke" is "companion"
 
     state "cool out"
     {
-        state = "charging";
+        if(!player.midair)
+            state = "charging";
+        else
+            state = "main";
     }
 
     fun spawnSmoke(scale)
@@ -50,7 +53,7 @@ object "Dash Smoke" is "companion"
         if(!player.midair) {
             Level.spawnEntity(
                 "Speed Smoke",
-                player.collider.center.translatedBy(player.direction * -22, dy - 3)
+                player.collider.center.translatedBy(player.direction * -22, dy + 2)
             ).setDirection(player.direction).setScale(scale);
         }
     }

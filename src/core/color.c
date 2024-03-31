@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * color.c - color utility
- * Copyright (C) 2019  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,12 +18,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if !defined(A5BUILD)
-#include <allegro.h>
-#endif
-
 #include <string.h>
 #include "color.h"
+#include "../util/stringutil.h"
+#include "../util/numeric.h"
 
 /*
  * color_rgb()
@@ -32,31 +30,62 @@
  */
 color_t color_rgb(uint8_t r, uint8_t g, uint8_t b)
 {
-#if defined(A5BUILD)
     return (color_t){ al_map_rgb(r, g, b) };
-#else
-    return (color_t){ makeacol(r, g, b, 255) };
-#endif
 }
 
 /*
  * color_rgba()
  * Generates a color from its RGBA components
  * 0 <= r, g, b, a <= 255
+ * Note: color_premul_rgba() may be preferable over this
  */
 color_t color_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
-#if defined(A5BUILD)
     return (color_t){ al_map_rgba(r, g, b, a) };
-#else
-    return (color_t){ makeacol(r, g, b, a) };
-#endif
+}
+
+/*
+ * color_premul_rgba()
+ * Generates a color from its RGBA components
+ * The RGB components will be premultiplied by the alpha value
+ * 0 <= r, g, b, a <= 255
+ */
+color_t color_premul_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+{
+    float rf = (float)r / 255.0f;
+    float gf = (float)g / 255.0f;
+    float bf = (float)b / 255.0f;
+    float af = (float)a / 255.0f;
+
+    return (color_t){ al_map_rgba_f(rf * af, gf * af, bf * af, af) };
+}
+
+/*
+ * color_mix()
+ * Blend two colors, x and y, linearly in RGBA space with t in [0,1]
+ */
+color_t color_mix(color_t x, color_t y, float t)
+{
+    float r, g, b, a;
+    uint8_t xr, xg, xb, xa;
+    uint8_t yr, yg, yb, ya;
+
+    color_unmap(x, &xr, &xg, &xb, &xa);
+    color_unmap(y, &yr, &yg, &yb, &ya);
+
+    r = lerp((float)xr, (float)yr, t);
+    g = lerp((float)xg, (float)yg, t);
+    b = lerp((float)xb, (float)yb, t);
+    a = lerp((float)xa, (float)ya, t);
+
+    return color_rgba(r, g, b, a);
 }
 
 /*
  * color_hex()
  * Converts a 3, 6 or 8-character RGB[A] hex string to a color
  * Example: "fff" becomes white; "ff8800" becomes orange
+ * Note: this will return a color with premultiplied alpha
  */
 color_t color_hex(const char* hex_string)
 {
@@ -88,7 +117,46 @@ color_t color_hex(const char* hex_string)
     }
 
     /* done! */
-    return color_rgba(r, g, b, a);
+    return color_premul_rgba(r, g, b, a);
+}
+
+/*
+ * color_to_hex()
+ * Converts a color to an equivalent hex string, e.g.,
+ * color_rgba(255, 255, 0, 128) becomes "ffff0080"
+ * color_rgb(255, 255, 255) becomes "ffffff"
+ * If dest is set to NULL, a static buffer is returned.
+ * Otherwise, dest is returned with the hex string.
+ * Note: dest_size should be >= 9 (or 0 if dest is NULL)
+ */
+const char* color_to_hex(color_t color, char* dest, size_t dest_size)
+{
+    static const char table[] = "0123456789abcdef";
+    static char buf[16];
+    uint8_t r, g, b, a;
+    char *p = buf;
+
+    /* get the RGBA components of the input color */
+    color_unmap(color, &r, &g, &b, &a);
+
+    /* write the hex string to the internal buffer */
+    *(p++) = table[(r >> 4) & 15];
+    *(p++) = table[r & 15];
+    *(p++) = table[(g >> 4) & 15];
+    *(p++) = table[g & 15];
+    *(p++) = table[(b >> 4) & 15];
+    *(p++) = table[b & 15];
+    if(a < 255) {
+        *(p++) = table[(a >> 4) & 15];
+        *(p++) = table[a & 15];
+    }
+    *p = '\0';
+
+    /* return the hex string */
+    if(dest != NULL)
+        return str_cpy(dest, buf, dest_size);
+    else
+        return buf;
 }
 
 /*
@@ -98,15 +166,8 @@ color_t color_hex(const char* hex_string)
  */
 void color_unmap(color_t color, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a)
 {
-#if defined(A5BUILD)
     unsigned char tmp = 0;
     al_unmap_rgba(color._color, r ? (unsigned char*)r : &tmp, g ? (unsigned char*)g : &tmp, b ? (unsigned char*)b : &tmp, a ? (unsigned char*)a : &tmp);
-#else
-    if(r) *r = getr(color._value);
-    if(g) *g = getg(color._value);
-    if(b) *b = getb(color._value);
-    if(a) *a = geta(color._value);
-#endif
 }
 
 /*
@@ -124,12 +185,7 @@ bool color_equals(color_t a, color_t b)
  */
 bool color_is_transparent(color_t color)
 {
-#if defined(A5BUILD)
     unsigned char r, g, b, a;
     al_unmap_rgba(color._color, &r, &g, &b, &a);
     return (a == 0) || (r == 255 && g == 0 && b == 255); /* bright pink is the mask color */
-#else
-    /* mask color (bright pink); ignore alpha */
-    return (255 == getr(color._value) && 0 == getg(color._value) && 255 == getb(color._value));
-#endif
 }

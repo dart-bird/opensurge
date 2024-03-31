@@ -142,12 +142,13 @@ sprite "Charge"
 	  repeat_from 80
     }
 
-    // ceiling (being carried)
+    // zipline
     animation 16
     {
         repeat      TRUE
         fps         8
         data        15
+        action_spot 26 4
     }
 
     // winning (victory)
@@ -188,21 +189,5 @@ sprite "Life Icon Charge"
         repeat      TRUE
         fps         8
         data        2
-    }
-}
-
-// Goal Sign corresponding to the character
-sprite "Goal Charge"
-{
-    source_file     "images/goal.png"
-    source_rect     0 12 184 162
-    frame_size      46 54
-    hot_spot        23 54
-
-    animation 0
-    {
-        repeat      TRUE
-        fps         8
-        data        7
     }
 }

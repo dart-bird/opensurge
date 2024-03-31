@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * stageselect.c - stage selection screen
- * Copyright (C) 2010, 2012  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -21,15 +21,14 @@
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
+#include <stdbool.h>
 #include "stageselect.h"
-#include "options.h"
+#include "util/levparser.h"
+#include "settings.h"
 #include "level.h"
-#include "../core/util.h"
 #include "../core/scene.h"
 #include "../core/storyboard.h"
-#include "../core/v2d.h"
-#include "../core/assetfs.h"
-#include "../core/stringutil.h"
+#include "../core/asset.h"
 #include "../core/logfile.h"
 #include "../core/fadefx.h"
 #include "../core/color.h"
@@ -38,11 +37,16 @@
 #include "../core/lang.h"
 #include "../core/input.h"
 #include "../core/timer.h"
-#include "../core/nanoparser/nanoparser.h"
 #include "../core/font.h"
+#include "../core/prefs.h"
+#include "../util/v2d.h"
+#include "../util/numeric.h"
+#include "../util/util.h"
+#include "../util/stringutil.h"
 #include "../entities/actor.h"
 #include "../entities/background.h"
 #include "../entities/player.h"
+#include "../entities/mobilegamepad.h"
 #include "../entities/sfx.h"
 #include "../entities/legacy/nanocalc/nanocalc.h"
 #include "../entities/legacy/nanocalc/nanocalc_addons.h"
@@ -51,15 +55,15 @@
 
 /* stage data */
 typedef struct {
-    char* filepath; /* absolute filepath */
-    char name[128]; /* stage name */
-    int act; /* act number */
-    int requires[3]; /* required version */
+    char* filepath; /* relative path */
+    char name[256]; /* stage name */
+    int act; /* zone number */
+    bool is_quest; /* is this entry a quest file (.qst)? */
 } stagedata_t;
 
-static stagedata_t* stagedata_load(const char *filename);
+static stagedata_t* stagedata_load(const char *filename, bool is_quest);
 static void stagedata_unload(stagedata_t *s);
-static int traverse(const parsetree_statement_t *stmt, void *stagedata);
+static bool interpret_level_line(const char *filepath, int fileline, levparser_command_t command, const char *command_name, int param_count, const char** param, void* data);
 
 
 
@@ -67,6 +71,7 @@ static int traverse(const parsetree_statement_t *stmt, void *stagedata);
 #define STAGE_BGFILE             "themes/scenes/levelselect.bg"
 #define STAGE_MAXPERPAGE         (VIDEO_SCREEN_H / 30)
 #define STAGE_MAX                2048 /* can't have more than STAGE_MAX levels installed */
+#define STAGE_PREFSENTRY         ".lastselectedlevel"
 static font_t *title; /* title */
 static font_t *msg; /* message */
 static font_t *page; /* page number */
@@ -79,10 +84,11 @@ static stagedata_t *stage_data[STAGE_MAX]; /* vector of stagedata_t* */
 static int stage_count; /* length of stage_data[] */
 static int option; /* current option: 0 .. stage_count - 1 */
 static font_t **stage_label; /* vector */
-static int enable_debug = FALSE; /* debug mode? must start out as false. */
-static int can_play_music = FALSE; /* can play music? */
+static bool enable_debug; /* debug mode? must start out as false. */
+static bool can_play_music; /* can play music? */
 static music_t* music = NULL; /* background music */
-static char* level_to_be_loaded;
+static const stagedata_t* selected_stage; /* the level or quest we're going to load (NULL if none) */
+static bool was_immersive = false; /* immersive mode */
 
 
 
@@ -91,6 +97,9 @@ static void load_stage_list();
 static void unload_stage_list();
 static int dirfill(const char *vpath, void *param);
 static int sort_cmp(const void *a, const void *b);
+static int debug_sort_cmp(const void *a, const void *b);
+static int load_selection();
+static void save_selection(int option);
 
 
 
@@ -105,26 +114,27 @@ static int sort_cmp(const void *a, const void *b);
  */
 void stageselect_init(void *should_enable_debug)
 {
-    enable_debug = *((int*)should_enable_debug) ? TRUE : FALSE;
-    can_play_music = (!enable_debug || timer_get_ticks() >= 10000);
+    enable_debug = (should_enable_debug != NULL) && (*((bool*)should_enable_debug));
+    load_stage_list();
 
-    option = 0;
     scene_time = 0;
+    option = load_selection();
     state = STAGESTATE_NORMAL;
     input = input_create_user(NULL);
-    level_to_be_loaded = NULL;
+    selected_stage = NULL;
     music = music_load(OPTIONS_MUSICFILE);
+    can_play_music = (!enable_debug || timer_get_elapsed() >= 10.0);
 
-    title = font_create("menu.title");
-    font_set_text(title, "%s", !enable_debug ? "$STAGESELECT_TITLE" : "$STAGESELECT_DEBUG");
+    title = font_create("MenuTitle");
+    font_set_text(title, "%s", !enable_debug ? "$STAGESELECT_COLORED_TITLE" : "$STAGESELECT_COLORED_DEBUG");
     font_set_position(title, v2d_new(VIDEO_SCREEN_W/2, 10));
     font_set_align(title, FONTALIGN_CENTER);
 
-    msg = font_create("menu.text");
+    msg = font_create("MenuText");
     font_set_text(msg, "%s", "$STAGESELECT_MSG");
     font_set_position(msg, v2d_new(10, VIDEO_SCREEN_H - font_get_textsize(msg).y * 1.5f));
 
-    page = font_create("menu.text");
+    page = font_create("MenuText");
     font_set_textarguments(page, 2, "0", "0");
     font_set_text(page, "%s", "$STAGESELECT_PAGE");
     font_set_position(page, v2d_new(VIDEO_SCREEN_W - font_get_textsize(page).x - 10, font_get_position(msg).y));
@@ -132,10 +142,11 @@ void stageselect_init(void *should_enable_debug)
     icon = actor_create();
     actor_change_animation(icon, sprite_get_animation("UI Pointer", 0));
 
-    load_stage_list();
     bgtheme = background_load(STAGE_BGFILE);
-
     fadefx_in(color_rgb(0,0,0), 1.0);
+
+    was_immersive = video_is_immersive();
+    video_set_immersive(false);
 }
 
 
@@ -145,13 +156,9 @@ void stageselect_init(void *should_enable_debug)
  */
 void stageselect_release()
 {
-    enable_debug = FALSE;
+    video_set_immersive(was_immersive);
 
-    if(level_to_be_loaded != NULL) {
-        free(level_to_be_loaded);
-        level_to_be_loaded = NULL;
-    }
-
+    selected_stage = NULL;
     bgtheme = background_unload(bgtheme);
     unload_stage_list();
 
@@ -178,9 +185,11 @@ void stageselect_update()
     /* background movement */
     background_update(bgtheme);
 
+    /* display the mobile gamepad */
+    mobilegamepad_fadein();
+
     /* menu option */
     icon->position = font_get_position(stage_label[option]);
-    icon->position.x += -20 + 3*cos(2*PI * scene_time);
 
     /* page number */
     pagenum = option/STAGE_MAXPERPAGE + 1;
@@ -206,25 +215,35 @@ void stageselect_update()
         /* normal mode (menu) */
         case STAGESTATE_NORMAL: {
             if(!fadefx_is_fading()) {
+                /* next */
                 if(input_button_pressed(input, IB_DOWN)) {
-                    option = (option+1) % stage_count;
+                    option = (option + 1) % stage_count;
                     sound_play(SFX_CHOOSE);
                 }
+
+                /* previous */
                 if(input_button_pressed(input, IB_UP)) {
-                    option = (((option-1) % stage_count) + stage_count) % stage_count;
+                    option = (option + (stage_count - 1)) % stage_count;
                     sound_play(SFX_CHOOSE);
                 }
-                if(input_button_pressed(input, IB_FIRE1) || input_button_pressed(input, IB_FIRE3)) {
-                    logfile_message("Loading level \"%s\" (\"%s\")...", stage_data[option]->name, stage_data[option]->filepath);
-                    if(level_to_be_loaded != NULL)
-                        free(level_to_be_loaded);
-                    level_to_be_loaded = str_dup(stage_data[option]->filepath);
-                    sound_play(SFX_CONFIRM);
-                    state = STAGESTATE_PLAY;
-                }
-                if(input_button_pressed(input, IB_FIRE4)) {
+
+                /* back */
+                if(input_button_pressed(input, IB_FIRE4) || input_button_pressed(input, IB_FIRE2)) {
                     sound_play(SFX_BACK);
                     state = STAGESTATE_QUIT;
+                }
+
+                /* select */
+                if(input_button_pressed(input, IB_FIRE1) || input_button_pressed(input, IB_FIRE3)) {
+                    selected_stage = stage_data[option];
+                    logfile_message(
+                        "Loading %s \"%s\"...",
+                        selected_stage->is_quest ? "quest" : "level",
+                        selected_stage->filepath
+                    );
+                    save_selection(option);
+                    sound_play(SFX_CONFIRM);
+                    state = STAGESTATE_PLAY;
                 }
             }
             break;
@@ -251,8 +270,27 @@ void stageselect_update()
                 player_set_lives(PLAYER_INITIAL_LIVES);
                 player_set_score(0);
 
-                /* push the level scene */
-                scenestack_push(storyboard_get_scene(SCENE_LEVEL), (void*)level_to_be_loaded);
+                /* push the next scene */
+                if(selected_stage->is_quest) {
+
+                    /* selected_stage->filepath is a .qst file */
+                    scenestack_push(storyboard_get_scene(SCENE_QUEST), selected_stage->filepath);
+
+                }
+                else {
+
+                    /* selected_stage->filepath is a .lev file */
+
+                    /* Let's open it as a quest anyway. During gameplay, the top-most quest
+                       may be aborted for any reason. If this happens, we don't want this
+                       fact to affect any previously loaded quests. */
+
+                    /* open the .lev file as a quest containing a single level */
+                    scenestack_push(storyboard_get_scene(SCENE_QUEST), selected_stage->filepath);
+
+                }
+
+                /* done! */
                 state = STAGESTATE_FADEIN;
                 return;
             }
@@ -277,7 +315,6 @@ void stageselect_update()
  */
 void stageselect_render()
 {
-    int i;
     v2d_t cam = v2d_new(VIDEO_SCREEN_W/2, VIDEO_SCREEN_H/2);
 
     background_render_bg(bgtheme, cam);
@@ -287,7 +324,7 @@ void stageselect_render()
     font_render(msg, cam);
     font_render(page, cam);
 
-    for(i=0; i<stage_count; i++) {
+    for(int i = 0; i < stage_count; i++) {
         if(i/STAGE_MAXPERPAGE == option/STAGE_MAXPERPAGE) {
             if(stage_data[i]->act > 0 && !enable_debug)
                 font_set_text(stage_label[i], (option==i) ? "<color=$COLOR_HIGHLIGHT>%s - %s %d</color>" : "%s - %s %d", stage_data[i]->name, lang_get("STAGESELECT_ACT"), stage_data[i]->act);
@@ -308,15 +345,18 @@ void stageselect_render()
 /* loads the stage list from the level/ folder */
 void load_stage_list()
 {
-    int i;
-
     video_display_loading_screen();
     logfile_message("load_stage_list()");
 
     /* loading data */
     stage_count = 0;
-    assetfs_foreach_file("levels", ".lev", dirfill, NULL, enable_debug);
-    qsort(stage_data, stage_count, sizeof(stagedata_t*), sort_cmp);
+    asset_foreach_file("levels", ".lev", dirfill, "L", enable_debug);
+    if(enable_debug) {
+        asset_foreach_file("quests", ".qst", dirfill, "Q", true);
+        qsort(stage_data, stage_count, sizeof(stagedata_t*), debug_sort_cmp);
+    }
+    else
+        qsort(stage_data, stage_count, sizeof(stagedata_t*), sort_cmp);
 
     /* fatal error */
     if(stage_count == 0)
@@ -326,8 +366,8 @@ void load_stage_list()
 
     /* other stuff */
     stage_label = mallocx(stage_count * sizeof(font_t**));
-    for(i=0; i<stage_count; i++) {
-        stage_label[i] = font_create("menu.text");
+    for(int i = 0; i < stage_count; i++) {
+        stage_label[i] = font_create("MenuText");
         font_set_position(stage_label[i], v2d_new(25, 50 + 20 * (i % STAGE_MAXPERPAGE)));
     }
 }
@@ -337,11 +377,9 @@ void load_stage_list()
 /* unloads the stage list */
 void unload_stage_list()
 {
-    int i;
-
     logfile_message("unload_stage_list()");
 
-    for(i=0; i<stage_count; i++) {
+    for(int i = 0; i < stage_count; i++) {
         font_destroy(stage_label[i]);
         stagedata_unload(stage_data[i]);
     }
@@ -354,40 +392,17 @@ void unload_stage_list()
 /* callback that fills stage_data[] */
 int dirfill(const char *vpath, void *param)
 {
-    int supver, subver, wipver;
-    stagedata_t *s;
-
     /* can't have more than STAGE_MAX levels installed */
     if(stage_count >= STAGE_MAX)
         return 0;
 
-    s = stagedata_load(vpath);
-    if(s != NULL) {
-        supver = s->requires[0];
-        subver = s->requires[1];
-        wipver = s->requires[2];
+    /* read level data */
+    bool is_quest = (*((const char*)param) == 'Q');
+    stagedata_t* s = stagedata_load(vpath, is_quest);
+    if(s != NULL)
+        stage_data[ stage_count++ ] = s;
 
-        if(game_version_compare(supver, subver, wipver) >= 0) {
-            stage_data[ stage_count++ ] = s;
-            if(enable_debug) { /* debug mode: changing the names... */
-                char *p = str_rstr(s->filepath, "levels/");
-                if(!p) {
-                    p = str_rstr(s->filepath, "levels\\");
-                    if(!p)
-                        snprintf(s->name, sizeof(s->name), "%s", s->filepath);
-                    else
-                        snprintf(s->name, sizeof(s->name), "%s", p + strlen("levels\\"));
-                }
-                else
-                    snprintf(s->name, sizeof(s->name), "%s", p + strlen("levels/"));
-            }
-        }
-        else {
-            logfile_message("Warning: level \"%s\" isn't compatible with this version of the game (requires: %d.%d.%d).", vpath, supver, subver, wipver);
-            stagedata_unload(s);
-        }
-    }
-
+    /* done! */
     return 0;
 }
 
@@ -395,34 +410,52 @@ int dirfill(const char *vpath, void *param)
 int sort_cmp(const void *a, const void *b)
 {
     stagedata_t *s[2] = { *((stagedata_t**)a), *((stagedata_t**)b) };
+    int r = str_icmp(s[0]->name, s[1]->name);
+    return (r == 0) ? (s[0]->act - s[1]->act) : r;
+}
+
+/* debug mode comparator */
+int debug_sort_cmp(const void *a, const void *b)
+{
+    stagedata_t *s[2] = { *((stagedata_t**)a), *((stagedata_t**)b) };
+
+    if(s[0]->is_quest != s[1]->is_quest)
+        return (int)(!!s[0]->is_quest) - (int)(!!s[1]->is_quest);
+
     const char *p = strchr(s[0]->name, '/'), *q = strchr(s[1]->name, '/');
     int r = ((!p && !q) || (p && q)) ? str_icmp(s[0]->name, s[1]->name) : (!p && q ? -1 : 1);
     return (r == 0) ? (s[0]->act - s[1]->act) : r;
 }
 
 
-/* stagedata_t constructor. Returns NULL if filename is not a level. */
-stagedata_t* stagedata_load(const char *filename)
+/* stagedata_t constructor. Returns NULL if filename is not a valid entry. */
+stagedata_t* stagedata_load(const char *filename, bool is_quest)
 {
-    parsetree_program_t *prog;
     stagedata_t* s = mallocx(sizeof *s);
-    const char* fullpath = assetfs_fullpath(filename);
-    char* p;
 
-    s->filepath = str_dup(filename);
-    while((p = strchr(s->filepath, '\\')))
-        *p = '/'; /* replace '\\' by '/' */
-
+    /* initialize the fields */
     str_cpy(s->name, "Untitled", sizeof(s->name));
-    s->act = 1;
-    s->requires[0] = 0;
-    s->requires[1] = 0;
-    s->requires[2] = 0;
+    s->act = 0;
+    s->filepath = str_normalize_slashes(str_dup(filename));
+    s->is_quest = is_quest;
 
-    prog = nanoparser_construct_tree(fullpath);
-    nanoparser_traverse_program_ex(prog, (void*)s, traverse);
-    prog = nanoparser_deconstruct_tree(prog);
+    /* fill in the fields */
+    if(enable_debug) {
+        /* create a name based on the filepath */
+        const int PREFIX_LENGTH = 7; /* == strlen("levels/") */
+        bool skip_prefix = (0 == str_incmp(s->filepath, "levels/", PREFIX_LENGTH));
+        snprintf(s->name, sizeof(s->name), "%s", s->filepath + (skip_prefix ? PREFIX_LENGTH : 0));
+    }
+    else if(!is_quest) {
+        /* read the .lev file */
+        if(!levparser_parse(s->filepath, s, interpret_level_line)) {
+            logfile_message("Level select: can't parse level file \"%s\"", s->filepath);
+            stagedata_unload(s);
+            return NULL;
+        }
+    }
 
+    /* done! */
     return s;
 }
 
@@ -433,22 +466,60 @@ void stagedata_unload(stagedata_t *s)
     free(s);
 }
 
-/* traverses a line of the level */
-int traverse(const parsetree_statement_t *stmt, void *stagedata)
+/* read a line of the .lev file */
+bool interpret_level_line(const char *filepath, int fileline, levparser_command_t command, const char *command_name, int param_count, const char** param, void* data)
 {
-    stagedata_t *s = (stagedata_t*)stagedata;
-    const char *id = nanoparser_get_identifier(stmt);
-    const parsetree_parameter_t *param_list = nanoparser_get_parameter_list(stmt);
-    const char *val = nanoparser_get_string(nanoparser_get_nth_parameter(param_list, 1));
+    stagedata_t* stage = (stagedata_t*)data;
 
-    if(str_icmp(id, "name") == 0)
-        str_cpy(s->name, val, sizeof(s->name));
-    else if(str_icmp(id, "act") == 0)
-        s->act = atoi(val);
-    else if(str_icmp(id, "requires") == 0)
-        sscanf(val, "%d.%d.%d", &(s->requires[0]), &(s->requires[1]), &(s->requires[2]));
-    else if(str_icmp(id, "brick") == 0) /* optimization */
-        return 1; /* stop the enumeration */
+    switch(command) {
+        case LEVCOMMAND_NAME:
+            if(param_count >= 1)
+                str_cpy(stage->name, param[0], sizeof(stage->name));
+            break;
 
+        case LEVCOMMAND_ACT:
+            if(param_count >= 1)
+                stage->act = atoi(param[0]);
+            break;
+
+        case LEVCOMMAND_BRICK:
+        case LEVCOMMAND_ENTITY:
+            return false; /* stop the enumeration after reading the header */
+
+        default:
+            break;
+    }
+
+    /* continue the enumeration */
+    return true;
+}
+
+/* load a level that was previously selected by the user */
+int load_selection()
+{
+    extern prefs_t* prefs;
+    const char* last_selection;
+
+    /* first run? */
+    if(!prefs_has_item(prefs, STAGE_PREFSENTRY))
+        return 0; /* not found; pick the 1st entry */
+
+    /* find i such that stage_data[i]->filepath == last_selection */
+    last_selection = prefs_get_string(prefs, STAGE_PREFSENTRY);
+    for(int i = 0; i < stage_count; i++) {
+        if(strcmp(last_selection, stage_data[i]->filepath) == 0)
+            return i;
+    }
+
+    /* not found */
     return 0;
+}
+
+/* save a level selected by the user */
+void save_selection(int option)
+{
+    extern prefs_t* prefs;
+
+    if(option >= 0 && option < stage_count)
+        prefs_set_string(prefs, STAGE_PREFSENTRY, stage_data[option]->filepath);
 }

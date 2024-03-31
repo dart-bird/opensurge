@@ -1,7 +1,7 @@
 /*
  * Open Surge Engine
  * langselect.c - language selection screen
- * Copyright (C) 2009-2010, 2019  Alexandre Martins <alemartf@gmail.com>
+ * Copyright 2008-2024 Alexandre Martins <alemartf(at)gmail.com>
  * http://opensurge2d.org
  *
  * This program is free software; you can redistribute it and/or modify
@@ -22,11 +22,10 @@
 #include <string.h>
 #include <math.h>
 #include "langselect.h"
-#include "options.h"
-#include "../core/util.h"
+#include "settings.h"
+#include "../core/global.h"
 #include "../core/scene.h"
-#include "../core/assetfs.h"
-#include "../core/stringutil.h"
+#include "../core/asset.h"
 #include "../core/logfile.h"
 #include "../core/fadefx.h"
 #include "../core/color.h"
@@ -37,33 +36,41 @@
 #include "../core/timer.h"
 #include "../core/font.h"
 #include "../core/prefs.h"
-#include "../core/modmanager.h"
+#include "../util/numeric.h"
+#include "../util/util.h"
+#include "../util/stringutil.h"
 #include "../entities/actor.h"
 #include "../entities/background.h"
+#include "../entities/mobilegamepad.h"
 #include "../entities/sfx.h"
 
 
 /* private data */
-#define LANG_BGFILE             "themes/scenes/langselect.bg"
-#define LANG_MAXPERPAGE         7
+static const char* LANG_BGFILE = "themes/scenes/langselect.bg";
+static const int LANG_MAXPERCOL = 5;
+static const int LANG_MAXCOLS = 3;
 typedef struct {
-    char title[128];
+    char name[128];
     char author[128];
     char filepath[1024];
 } lngdata_t;
 
 static bool quit;
 static int lngcount;
-static font_t *title, **lngfnt[2], *page_label, *author_label;
+static font_t *title, **lngfnt[2], *author_label;
 static lngdata_t *lngdata;
 static int option; /* current option: 0..n-1 */
 static actor_t *arrow;
 static input_t *input;
 static float scene_time;
+static float option_time;
 static bgtheme_t *bgtheme;
 static music_t *music;
 static bool fresh_install;
 static bool came_from_options;
+static v2d_t sliding_camera;
+static int column_width;
+static bool was_immersive;
 
 /* private functions */
 static void save_preferences(const char *filepath);
@@ -72,6 +79,8 @@ static void unload_lang_list();
 static int dirfill(const char *filename, void *param);
 static int dircount(const char *filename, void *param);
 static int sort_cmp(const void *a, const void *b);
+static int change_option(int new_option);
+static int option_of(const char *language_name);
 
 
 
@@ -86,20 +95,22 @@ static int sort_cmp(const void *a, const void *b);
  */
 void langselect_init(void *param)
 {
-    prefs_t* prefs = modmanager_prefs();
+    extern prefs_t* prefs;
 
-    option = 0;
     quit = false;
-    scene_time = 0;
+    option = 0;
+    option_time = 9999.0f;
+    scene_time = 0.0f;
     fresh_install = !prefs_has_item(prefs, ".langpath");
     came_from_options = (param != NULL) && *((bool*)param);
     input = input_create_user(NULL);
     music = music_load(OPTIONS_MUSICFILE);
+    sliding_camera = v2d_new(0, VIDEO_SCREEN_H / 2);
+    column_width = VIDEO_SCREEN_W / (LANG_MAXCOLS - 0.35f);
 
-    page_label = font_create("menu.text");
-    author_label = font_create("menu.text");
+    author_label = font_create("MenuText");
 
-    title = font_create("menu.title");
+    title = font_create("MenuTitle");
     font_set_text(title, "%s", "<color=$COLOR_TITLE>SELECT YOUR\nLANGUAGE</color>");
     font_set_position(title, v2d_new(VIDEO_SCREEN_W/2, 5));
     font_set_align(title, FONTALIGN_CENTER);
@@ -116,8 +127,12 @@ void langselect_init(void *param)
         scenestack_pop();
         return;
     }
+    option = option_of(lang_get("LANG_NAME"));
 
-    fadefx_in(color_rgb(0,0,0), 1.0);
+    fadefx_in(color_rgb(0,0,0), 1.0f);
+
+    was_immersive = video_is_immersive();
+    video_set_immersive(false);
 }
 
 
@@ -127,13 +142,14 @@ void langselect_init(void *param)
  */
 void langselect_release()
 {
+    video_set_immersive(was_immersive);
+
     unload_lang_list();
     bgtheme = background_unload(bgtheme);
 
     actor_destroy(arrow);
     font_destroy(title);
     font_destroy(author_label);
-    font_destroy(page_label);
     input_destroy(input);
     music_unref(music);
 }
@@ -145,54 +161,64 @@ void langselect_release()
  */
 void langselect_update()
 {
-    float dt = timer_get_delta();
-    int current_page, max_pages;
-    v2d_t pos;
+    float dest_x, dt = timer_get_delta();
 
+    /* update timers */
     scene_time += dt;
+    option_time += dt;
 
     /* background movement */
     background_update(bgtheme);
 
+    /* display the mobile gamepad */
+    mobilegamepad_fadein();
+
     /* menu option */
     arrow->position = font_get_position(lngfnt[0][option]);
-    arrow->position.x += -20 + 5*cos(2*PI * scene_time);
     if(!quit && !fadefx_is_fading()) {
         if(input_button_pressed(input, IB_DOWN)) {
-            option = (option+1)%lngcount;
-            sound_play(SFX_CHOOSE);
+            if(option / LANG_MAXPERCOL == (option + 1) / LANG_MAXPERCOL) {
+                if(option < lngcount - 1)
+                    change_option(option + 1);
+            }
         }
         if(input_button_pressed(input, IB_UP)) {
-            option = (((option-1)%lngcount)+lngcount)%lngcount;
-            sound_play(SFX_CHOOSE);
+            if(option / LANG_MAXPERCOL == (option - 1) / LANG_MAXPERCOL) {
+                if(option > 0)
+                    change_option(option - 1);
+            }
+        }
+        if(input_button_pressed(input, IB_LEFT)) {
+            if(option - LANG_MAXPERCOL >= 0)
+                change_option(option - LANG_MAXPERCOL);
+        }
+        if(input_button_pressed(input, IB_RIGHT)) {
+            if(option + LANG_MAXPERCOL < lngcount)
+                change_option(option + LANG_MAXPERCOL);
         }
         if(input_button_pressed(input, IB_FIRE1) || input_button_pressed(input, IB_FIRE3)) {
-            char *filepath = lngdata[option].filepath;
-            logfile_message("Loading language \"%s\", \"%s\"", lngdata[option].title, filepath);
+            const char *filepath = lngdata[option].filepath;
+            logfile_message("Loading language \"%s\", \"%s\"", lngdata[option].name, filepath);
             lang_loadfile(filepath);
             save_preferences(filepath);
             sound_play(SFX_CONFIRM);
             quit = true;
         }
-        if(input_button_pressed(input, IB_FIRE4)) {
+        if(input_button_pressed(input, IB_FIRE4) || input_button_pressed(input, IB_FIRE2)) {
             sound_play(SFX_BACK);
             quit = true;
         }
     }
 
-    /* page label */
-    current_page = 1 + option / LANG_MAXPERPAGE;
-    max_pages = 1 + max(0, lngcount - 1) / LANG_MAXPERPAGE;
-    font_set_text(page_label, "page %d/%d", current_page, max_pages);
-    pos.x = VIDEO_SCREEN_W - font_get_textsize(page_label).x - 10;
-    pos.y = VIDEO_SCREEN_H - font_get_textsize(page_label).y - 5;
-    font_set_position(page_label, pos);
+    /* sliding camera */
+    dest_x = font_get_position(lngfnt[0][option]).x +
+             font_get_textsize(lngfnt[0][(option / LANG_MAXPERCOL) * LANG_MAXPERCOL]).x / 2;
+    sliding_camera.x = lerp(sliding_camera.x, dest_x, option_time / 0.33f);
 
     /* author label */
     font_set_text(author_label, "<color=$COLOR_HIGHLIGHT>Translation by:</color> %s", lngdata[option].author);
-    pos.x = 10;
-    pos.y = VIDEO_SCREEN_H - font_get_textsize(author_label).y - 5;
-    font_set_position(author_label, pos);
+    font_set_position(author_label, v2d_new(VIDEO_SCREEN_W / 2, VIDEO_SCREEN_H - font_get_textsize(author_label).y - 5));
+    font_set_align(author_label, FONTALIGN_CENTER);
 
     /* music */
     if(!music_is_playing() && !fresh_install)
@@ -204,7 +230,7 @@ void langselect_update()
             scenestack_pop();
             return;
         }
-        fadefx_out(color_rgb(0,0,0), 1.0);
+        fadefx_out(color_rgb(0,0,0), 1.0f);
     }
 }
 
@@ -223,15 +249,12 @@ void langselect_render()
     background_render_fg(bgtheme, cam);
 
     font_render(title, cam);
-    font_render(page_label, cam);
     font_render(author_label, cam);
 
-    for(i=0; i<lngcount; i++) {
-        if(i/LANG_MAXPERPAGE == option/LANG_MAXPERPAGE)
-            font_render(lngfnt[option==i ? 1 : 0][i], cam);
-    }
+    for(i=0; i<lngcount; i++)
+        font_render(lngfnt[option==i ? 1 : 0][i], sliding_camera);
 
-    actor_render(arrow, cam);
+    actor_render(arrow, sliding_camera);
 }
 
 
@@ -241,10 +264,34 @@ void langselect_render()
 
 /* private methods */
 
+/* change the current option */
+int change_option(int new_option)
+{
+    if(new_option >= 0 && new_option < lngcount) {
+        option_time = 0.0f;
+        sound_play(SFX_CHOOSE);
+        option = new_option;
+    }
+
+    return option;
+}
+
+/* returns k such that lngdata[k].name is language_name,
+   or 0 if there is no such k */
+int option_of(const char *language_name)
+{
+    for(int k = 0; k < lngcount; k++) {
+        if(str_icmp(language_name, lngdata[k].name) == 0)
+            return k;
+    }
+
+    return 0;
+}
+
 /* saves the user preferences */
 void save_preferences(const char *filepath)
 {
-    prefs_t* prefs = modmanager_prefs();
+    extern prefs_t* prefs;
     prefs_set_string(prefs, ".langpath", filepath);
 }
 
@@ -256,7 +303,7 @@ void load_lang_list()
 
     /* loading language data */
     lngcount = 0;
-    assetfs_foreach_file("languages", ".lng", dircount, (void*)&lngcount, true);
+    asset_foreach_file("languages", ".lng", dircount, (void*)&lngcount, false);
 
     /* fatal error */
     if(lngcount == 0)
@@ -266,19 +313,20 @@ void load_lang_list()
 
     /* grabbing language data */
     lngdata = mallocx(lngcount * sizeof(lngdata_t));
-    assetfs_foreach_file("languages", ".lng", dirfill, (void*)&c, true);
+    asset_foreach_file("languages", ".lng", dirfill, (void*)&c, false);
     qsort(lngdata, lngcount, sizeof(lngdata_t), sort_cmp);
 
     /* other stuff */
     lngfnt[0] = mallocx(lngcount * sizeof(font_t*));
     lngfnt[1] = mallocx(lngcount * sizeof(font_t*));
     for(i=0; i<lngcount; i++) {
-        lngfnt[0][i] = font_create("menu.text");
-        lngfnt[1][i] = font_create("menu.text");
-        font_set_text(lngfnt[0][i], "%2d. %s", i+1, lngdata[i].title);
-        font_set_text(lngfnt[1][i], "<color=$COLOR_HIGHLIGHT>% 2d. %s</color>", i+1, lngdata[i].title);
-        font_set_position(lngfnt[0][i], v2d_new(25, 72 + 20*(i%LANG_MAXPERPAGE)));
-        font_set_position(lngfnt[1][i], v2d_new(25, 72 + 20*(i%LANG_MAXPERPAGE)));
+        int col = i / LANG_MAXPERCOL, row = i % LANG_MAXPERCOL;
+        lngfnt[0][i] = font_create("MenuText");
+        lngfnt[1][i] = font_create("MenuText");
+        font_set_text(lngfnt[0][i], "%s", lngdata[i].name);
+        font_set_text(lngfnt[1][i], "<color=$COLOR_HIGHLIGHT>%s</color>", lngdata[i].name);
+        font_set_position(lngfnt[0][i], v2d_new(25 + col * column_width, 88 + row * 1.35f * font_get_textsize(lngfnt[0][i]).y));
+        font_set_position(lngfnt[1][i], v2d_new(25 + col * column_width, 88 + row * 1.35f * font_get_textsize(lngfnt[1][i]).y));
     }
 }
 
@@ -290,7 +338,7 @@ int dirfill(const char *filename, void *param)
     lang_compatibility(filename, &supver, &subver, &wipver);
     if(game_version_compare(supver, subver, wipver) >= 0) {
         str_cpy(lngdata[*c].filepath, filename, sizeof(lngdata[*c].filepath));
-        lang_metadata(filename, "LANG_NAME", lngdata[*c].title, sizeof( lngdata[*c].title ));
+        lang_metadata(filename, "LANG_NAME", lngdata[*c].name, sizeof( lngdata[*c].name ));
         lang_metadata(filename, "LANG_AUTHOR", lngdata[*c].author, sizeof( lngdata[*c].author ));
         (*c)++;
     }
@@ -335,7 +383,7 @@ void unload_lang_list()
 int sort_cmp(const void *a, const void *b)
 {
     lngdata_t *q[2] = { (lngdata_t*)a, (lngdata_t*)b };
-    if(str_icmp(q[0]->title, "English") == 0) return -1;
-    if(str_icmp(q[1]->title, "English") == 0) return 1;
-    return str_icmp(q[0]->title, q[1]->title);
+    if(str_icmp(q[0]->name, "English") == 0) return -1;
+    if(str_icmp(q[1]->name, "English") == 0) return 1;
+    return str_icmp(q[0]->name, q[1]->name);
 }
